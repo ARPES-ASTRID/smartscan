@@ -62,8 +62,9 @@ def send_tcp_message(
         checksum: add a checksum to the message
         buffer_size: size of the buffer to use
         verbose: print out extra information
-
-
+        timeout: timeout for the connection: # TODO: implement timeout
+        CLRF: add a carriage return and line feed to the message
+        
     Returns:
         data: response from host
     """
@@ -80,6 +81,8 @@ def send_tcp_message(
                 print(f"Sending message: {msg}")
         if CLRF:
             msg += "\r\n"
+        if len(msg) < buffer_size:
+            raise ValueError(f'Message is too long. {len(msg)}/{buffer_size}')
         s.sendall(msg.encode())
         if verbose:
             print("Waiting for response")

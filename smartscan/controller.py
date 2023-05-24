@@ -11,9 +11,9 @@ class Controller:
         host: host to connect to
         port: port to connect to
         checksum: add a checksum to the message
-        buffer_size: size of the buffer to use
         verbose: print out extra information
         timeout: timeout for the connection
+        buffer_size: size of the buffer to use
     """
     INVALID_NUMBER = -999999999.
 
@@ -79,9 +79,12 @@ class Controller:
         """
         self.ndim = self.NDIM()
         self.limits = self.LIMITS()
-        self.filename = self.FILENAME()
+        assert len(self.limits) == self.ndim, f"Expected {self.ndim} limits, got {len(self.limits)}"
+        self.filename = Path(self.FILENAME())
+        assert self.filename.is_file(), f"Expected {self.filename} to be a file"        
         self.current_pos = self.CURRENT_POS()
-
+        assert len(self.current_pos) == self.ndim, f"Expected {self.ndim} current positions, got {len(self.current_pos)}"
+    
     def parse_h5_file(self, filename:str | Path) -> None:
         """Read the h5 file and get the scan info
 
@@ -95,49 +98,127 @@ class Controller:
             None
         """
         raise NotImplementedError
-        
-
-    def LIMITS(self) -> List[Tuple[float]]:
-        """ get the limits of the scan """
-        response = self.send_command('LIMITS')
-        split = response.split(' ')
-        assert split[0] == 'LIMITS', f"Expected LIMITS, got {split[0]}"
-        return [tuple(lim.split(',')) for lim in split[1:]]
     
-    def NDIM(self) -> int:
-        """ get the number of dimensions """
-        response = self.send_command('NDIM')
-        split = response.split(' ')
-        assert split[0] == 'NDIM', f"Expected NDIM, got {split[0]}"
-        return int(split[1])
-    
-    def FILENAME(self) -> str:
-        """ get the filename of the scan """
-        response = self.send_command('FILENAME')
-        split = response.split(' ')
-        assert split[0] == 'FILENAME', f"Expected FILENAME, got {split[0]}"
-        return split[1]
-    
-    def CURRENT_POS(self) -> List[float]:
-        """ get the current position """
-        response = self.send_command('CURRENT_POS')
-        split = response.split(' ')
-        assert split[0] == 'CURRENT_POS', f"Expected CURRENT_POS, got {split[0]}"
-        return [float(x) for x in split[1:]]
     
     def ADD_POINT(self, *args) -> None:
-        """ add a point to the scan queue """
+        """ add a point to the scan queue 
+        
+        Args:
+            args: position to add to the scan queue
+
+        Returns:
+            flag indicating success
+        """
         assert len(args) == self.ndim, f"Expected {self.ndim} args, got {len(args)}"
         assert all(a != self.INVALID_NUMBER for a in args), f"DO NOT move to {self.INVALID_NUMBER}"
         response = self.send_command('ADD_POINT', *args)
         split = response.split(' ')
-        assert split[0] == 'ADD_POINT', f"Expected ADD_POINT, got {split[0]}"
-        for v in split[1:]:
-            try: # TODO: implement warning if answer hits out of range.
-                if float(v) == self.INVALID_NUMBER:
-                    Warning("The point sent was out of range. It was ignored...")
-                return False
-            except  ValueError:
-                pass
+        cmd = split.pop(0)
+        vals = [float(x) for x in split]
+        assert cmd == 'ADD_POINT', f"Expected ADD_POINT, got {cmd}"
+        assert len(vals) == self.ndim, f"Expected {self.ndim} args, got {len(vals)}"
+        if any(a != self.INVALID_NUMBER for a in vals):
+            Warning(f"The position provided on axis {vals.index(self.INVALID_NUMBER)}"\
+                    f" is invalid. "
+            )
         return True
+     
+    def CLEAR(self) -> None:
+        """ clear the scan queue 
+        
+        Returns:
+            flag indicating success
+        """
+        response = self.send_command('CLEAR')
+        split = response.split(' ')
+        assert split[0] == 'CLEAR', f"Expected CLEAR, got {split[0]}"
+        return True
+
+    def LIMITS(self) -> List[Tuple[float]]:
+        """ get the limits of the scan and store them in self.limits
+        
+        Returns:
+            limits: list of tuples of floats
+        """
+        response = self.send_command('LIMITS')
+        split = response.split(' ')
+        assert split[0] == 'LIMITS', f"Expected LIMITS, got {split[0]}"
+        limits = [tuple(lim.split(',')) for lim in split[1:]]
+        assert len(limits) == self.ndim, f"Expected {self.ndim} limits, got {len(limits)}"
+        self.limits = limits
+        return limits
     
+    def NDIM(self) -> int:
+        """ get the number of dimensions and store it in self.ndim 
+        
+        Returns:
+            ndim: number of dimensions
+        """
+        response = self.send_command('NDIM')
+        split = response.split(' ')
+        assert split[0] == 'NDIM', f"Expected NDIM, got {split[0]}"
+        self.ndim = int(split[1])
+        return self.ndim
+    
+    def FILENAME(self) -> str:
+        """ get the filename of the scan and store it in self.filename
+        
+        Returns:
+            filename: filename of the scan
+        """
+        response = self.send_command('FILENAME')
+        split = response.split(' ')
+        assert split[0] == 'FILENAME', f"Expected FILENAME, got {split[0]}"
+        self.filename = split[1]
+        return self.filename
+    
+    def CURRENT_POS(self) -> List[float]:
+        """ get the current position 
+
+
+        Returns:
+            dict: {axis: position}
+        """
+        response = self.send_command('CURRENT_POS')
+        split = response.split(' ')
+        assert split[0] == 'CURRENT_POS', f"Expected CURRENT_POS, got {split[0]}"
+        current_pos = {str(p[0]):float(p[1]) for p in [x.split(',') for x in split[1:]]}
+        assert len(current_pos) == self.ndim, f"Expected {self.ndim} positions, got {len(current_pos)}"
+        self.current_pos = current_pos
+        return current_pos 
+
+    def END(self):
+        """ End the scan after completeing the current queue
+
+        Returns:
+            ack: the size of the remaining queue
+        """
+        response = self.send_command('END')
+        split = response.split(' ')
+        assert split[0] == 'END', f"Expected END, got {split[0]}"
+        assert len(split) == 2, f"Expected 2 args, got {len(split)}"
+        return split[1]
+
+    def ABORT(self):
+        """ Abort the scan
+
+        Returns:
+            ack: ABORT
+        """
+        response = self.send_command('ABORT')
+        assert response == 'ABORT', f"Expected ABORT, got {response}"
+        # TODO: stop the measurement loop
+        return True
+
+    def PAUSE(self):
+        """ Pause the scan
+        
+        Returns:
+            paused or unpaused status
+        """
+        response = self.send_command('PAUSE')
+        split = response.split(' ')
+        assert split[0] == 'PAUSE', f"Expected PAUSE, got {response}"
+        self.status = split[1]
+        return str(split[1])
+

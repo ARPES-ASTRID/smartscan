@@ -15,6 +15,7 @@ class Controller:
         verbose: print out extra information
         timeout: timeout for the connection
     """
+    INVALID_NUMBER = -999999999.
 
     def __init__(
             self, 
@@ -60,6 +61,7 @@ class Controller:
             verbose=self.verbose,
             timeout=self.timeout,
             buffer_size=self.buffer_size,
+            CLRF=True,
         )
         if "INVALID" in response:
             raise RuntimeError(f"Invalid command: {command}")
@@ -126,8 +128,16 @@ class Controller:
     def ADD_POINT(self, *args) -> None:
         """ add a point to the scan queue """
         assert len(args) == self.ndim, f"Expected {self.ndim} args, got {len(args)}"
+        assert all(a != self.INVALID_NUMBER for a in args), f"DO NOT move to {self.INVALID_NUMBER}"
         response = self.send_command('ADD_POINT', *args)
         split = response.split(' ')
         assert split[0] == 'ADD_POINT', f"Expected ADD_POINT, got {split[0]}"
-        return None
+        for v in split[1:]:
+            try: # TODO: implement warning if answer hits out of range.
+                if float(v) == self.INVALID_NUMBER:
+                    Warning("The point sent was out of range. It was ignored...")
+                return False
+            except  ValueError:
+                pass
+        return True
     

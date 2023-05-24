@@ -51,6 +51,7 @@ def send_tcp_message(
         buffer_size:int=1024,
         verbose:bool=False,
         timeout:float=1.0,
+        CLRF:bool=True,
     ) -> str:
     """ send a message to a host and port and return the response
 
@@ -61,6 +62,7 @@ def send_tcp_message(
         checksum: add a checksum to the message
         buffer_size: size of the buffer to use
         verbose: print out extra information
+
 
     Returns:
         data: response from host
@@ -76,6 +78,8 @@ def send_tcp_message(
         else:
             if verbose:
                 print(f"Sending message: {msg}")
+        if CLRF:
+            msg += "\r\n"
         s.sendall(msg.encode())
         if verbose:
             print("Waiting for response")
@@ -83,7 +87,8 @@ def send_tcp_message(
         if verbose:
             print(f"Received: {data}")
         data = remove_checksum(data)
-    return data
+        
+    return data.strip("\r\n")
 
 
 class TCPServer:

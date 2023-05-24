@@ -2,7 +2,7 @@ import socket
 from pathlib import Path
 from typing import List, Tuple, Sequence, Union
 
-from TCP import send_tcp_message
+from .TCP import send_tcp_message
 
 class Controller:
     """ Controller for the SGM4

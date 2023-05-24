@@ -2,12 +2,12 @@ from typing import List,Tuple,Sequence,Union
 import time
 import asyncio
 from pathlib import Path
-from TCP import TCPServer
 
 import xarray as xr
-
-
 import dataloader as dl
+
+from .TCP import TCPServer
+
 
 class VirtualSGM4(TCPServer):
 
@@ -245,6 +245,7 @@ class FileSGM4(VirtualSGM4):
         self.measured.loc[{self.dims[i]: position[i] for i in range(self.ndim)}] = value
         return value
     
+
 if __name__ == '__main__':
 
     

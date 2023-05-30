@@ -4,7 +4,7 @@ from typing import List, Tuple, Sequence, Union
 
 from .TCP import send_tcp_message
 
-class Controller:
+class SGM4Controller:
     """ Controller for the SGM4
 
     Args:

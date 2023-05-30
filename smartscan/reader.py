@@ -1,5 +1,3 @@
-
-
 from typing import Any, Tuple, Union, List, Sequence, Dict
 import numpy as np
 import h5py

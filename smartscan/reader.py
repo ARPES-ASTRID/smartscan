@@ -2,7 +2,7 @@ from typing import Any, Tuple, Union, List, Sequence, Dict
 import numpy as np
 import h5py
 
-class SMG4Reader:
+class SGM4Reader:
     """Reads SMG4 files."""
     INVALID_POS = -999999999.0
 
@@ -13,15 +13,32 @@ class SMG4Reader:
             filename: path to file to read
         """
         self.filename = filename
-
+        self.file = None
+        self.ndim = None
+        self.limits = None
+        self.current_pos = None
+        
     def __enter__(self) -> Any:
         """Open file."""
-        self.file = h5py.File(self.filename, 'r', swmr=True)
+        self.open()
         return self
     
     def __exit__(self, *args) -> None:
         """Close file."""
-        self.file.close()
+        self.close()
+
+    def __del__(self) -> None:
+        """Close file."""
+        self.close()
+
+    def open(self) -> None:
+        """Open file."""
+        self.file = h5py.File(self.filename, 'r', swmr=True)
+    
+    def close(self) -> None:
+        """Close file."""
+        if self.file is not None:
+            self.file.close()
 
     @property
     def spectra(self) -> np.ndarray:
@@ -76,7 +93,7 @@ class SMG4Reader:
     
     @property
     def axes(self) -> List[np.ndarray]:
-        """Get coordinates from file."""
+        """Get coordinate axes from file."""
         lengths = self.file['Entry/Data/ScanDetails/SlowAxis_length'][()]
         starts = self.file['Entry/Data/ScanDetails/SlowAxis_start'][()]
         steps = self.file['Entry/Data/ScanDetails/SlowAxis_step'][()]
@@ -100,7 +117,7 @@ class SMG4Reader:
     def spectra_dims(self) -> Tuple[int]:
         """Get shape of spectra."""
         dims = self.file['Entry/Data/ScanDetails/SlowAxis_names'][()]
-        return self.spectra.shape
+        return dims
 
     @property
     def spectra_shape(self) -> Tuple[int]:
@@ -108,12 +125,11 @@ class SMG4Reader:
 
     def to_xarray(self) -> np.ndarray:
         """Unravel stack into an nD array."""
-        shape = [len(c) for c in self.coords]
-        out = np.zeros()
-        
+        raise NotImplementedError
+    
 if __name__ == "__main__":
     test_data = "D:\data\SGM4 - example\Testing\Controller_9.h5"
-    with SMG4Reader(test_data) as reader:
+    with SGM4Reader(test_data) as reader:
         print(f'spectra shape {reader.spectra.shape}\n')
         print(f'ndim {reader.ndim}\n')
         print(f'limits {reader.limits}\n')

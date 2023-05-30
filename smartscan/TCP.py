@@ -81,7 +81,7 @@ def send_tcp_message(
                 print(f"Sending message: {msg}")
         if CLRF:
             msg += "\r\n"
-        if len(msg) < buffer_size:
+        if len(msg) > buffer_size:
             raise ValueError(f'Message is too long. {len(msg)}/{buffer_size}')
         s.sendall(msg.encode())
         if verbose:

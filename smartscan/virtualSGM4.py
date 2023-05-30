@@ -4,9 +4,10 @@ import asyncio
 from pathlib import Path
 
 import xarray as xr
-import dataloader as dl
+# import dataloader as dl
 
 from .TCP import TCPServer
+from .reader import SGM4Reader
 
 
 class VirtualSGM4(TCPServer):
@@ -34,7 +35,6 @@ class VirtualSGM4(TCPServer):
         self.wait_at_queue_empty = False
         self.filename = filename
 
-
     def position_is_allowed(self, axis: int, target: float) -> bool:
         """ Check if the target position is allowed for the specified axis.
         """
@@ -45,6 +45,7 @@ class VirtualSGM4(TCPServer):
         """
         # wait for the dwell time
         await asyncio.sleep(self.dwell_time)
+        # self.last_measure = 0.0
         return 0.0
 
     async def go_to_position(self, position: Sequence[float]) -> None:
@@ -60,7 +61,7 @@ class VirtualSGM4(TCPServer):
             await self.move_axis(i, position[i])
         self.log('moving from {} to {} took {:.3f} seconds'.format(old_pos, position, time.time()-t0))
 
-    async def move_axis(self, axis: int, target: float):
+    async def move_axis(self, axis: int, target: float) -> None:
         """ Move the specified axis to the specified target position.
 
         Args:
@@ -74,7 +75,7 @@ class VirtualSGM4(TCPServer):
         await asyncio.sleep(delay)
         self.current_pos[axis] = target
 
-    async def scan_loop(self):
+    async def scan_loop(self) -> None:
         """
         Start the scan.
 
@@ -95,12 +96,12 @@ class VirtualSGM4(TCPServer):
             next_pos = self.queue.pop(0)
             self.log(f'Moving to {next_pos}')
             await self.go_to_position(next_pos)
-            _ = self.measure()
+            _ = await self.measure()
 
 
         self.log('Scan finished')
 
-    def parse_message(self, message: str):
+    def parse_message(self, message: str) -> str:
         """ Parse a message received from the client.
 
         these are the possible commands and expected responses:
@@ -133,7 +134,7 @@ class VirtualSGM4(TCPServer):
             str: The response to send to the client.    
         """
         f'Received message "{message}"\n'
-        msg = message.split(' ')
+        msg = message.strip('\r\n').split(' ')
         try:
             attr = getattr(self, msg[0])
             if len(msg) > 1:
@@ -149,58 +150,57 @@ class VirtualSGM4(TCPServer):
             self.log(f'Sending answer "{answer}"')
             return answer
 
-
-    def ADD_POINT(self, *args):
+    def ADD_POINT(self, *args) -> str:
         assert len(args) == self.ndim, f'expected {self.ndim} arguments, got {len(args)}'
         points = [float(x) for x in args]
         self.queue.append(points)
         pts = ' '.join([str(x) for x in args])
-        return f'ADD_POINT {pts} {len(self.queue)}'
+        return f'ADD_POINT {pts}'# {len(self.queue)}
 
-    def CLEAR(self):
+    def CLEAR(self) -> str:
         self.queue = []
         return f'CLEAR'
 
-    def SCAN(self):
+    def SCAN(self) -> str:
         self.status = 'SCANNING'
         return f'SCAN'    
     
-    def END(self):
+    def END(self) -> str:
         self.wait_at_queue_empty = False
         return f'END {len(self.queue)}'
 
-    def ABORT(self):
+    def ABORT(self) -> str:
         self.status = 'ABORTED'
         # TODO: stop the measurement loop
         return f'ABORT'
 
-    def PAUSE(self):
+    def PAUSE(self) -> str:
         self.status = 'PAUSED' if self.status == 'SCANNING' else 'SCANNING'
         return f'PAUSE {self.status}'
 
-    def LIMITS(self):
+    def LIMITS(self) -> str:
         # assert len(args) == 2*self.ndim, f'expected {2*self.ndim} arguments, got {len(args)}'
         limits = ' '.join([f'{x},{y}' for x,y in  zip(self.limits[::2], self.limits[1::2])])
         return f'LIMITS {limits}'
     
-    def NDIM(self):
+    def NDIM(self) -> str:
         assert self.ndim in [1,2,3], f'invalid ndim {self.ndim}'
         return f'NDIM {self.ndim}'
 
-    def CURRENT_POS(self):
+    def CURRENT_POS(self) -> str:
         pos_str = ' '.join([str(x) for x in self.current_pos])
         return f'CURRENT_POS {pos_str}'
     
-    def QUEUE(self):
+    def QUEUE(self) -> str:
         return f'QUEUE {self.queue}'
     
-    def STATUS(self):
+    def STATUS(self) -> str:
         return f'STATUS {self.status}'
     
-    def FILENAME(self):
+    def FILENAME(self) -> str:
         return f'FILENAME {self.filename}'
 
-    def ERROR(self, error: str):
+    def ERROR(self, error: str) -> str:
         return f'ERROR {error}'
     
 
@@ -249,7 +249,13 @@ class FileSGM4(VirtualSGM4):
 if __name__ == '__main__':
 
     
-    vm = VirtualSGM4('localhost', 12345, ndim = 2, limits=[-10000,10000,-10000,10000], verbose=True)
+    vm = VirtualSGM4(
+        'localhost', 
+        12345, 
+        ndim = 2, 
+        limits=[-10000,10000,-10000,10000], 
+        verbose=True
+    )
     t0 = time.time()
     lin_pts = [
         (0,0),

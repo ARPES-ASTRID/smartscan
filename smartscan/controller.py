@@ -106,7 +106,9 @@ class SGM4Controller:
 
         with SGM4Reader(filename) as file:
             assert self.ndim == file.ndim, f"Expected {self.ndim} dimensions, got {file.ndim}"
-            assert self.limits == file.limits, f"Expected {self.limits} limits, got {file.limits}"
+            sgm4_limits = [sorted(l) for l in self.limits],
+            file_limits = [sorted(l) for l in file.limits],
+            assert sgm4_limits == file_limits, f"Expected {sgm4_limits} limits from SGM4, got {file_limits} from file"
             self.map_shape = file.map_shape
 
     def parse_h5_file(self, filename:str | Path) -> None:
@@ -280,7 +282,8 @@ class RandomController(SGM4Controller):
         Returns:
             None
         """
-        remaining_idx = itertools.product(*[range(x) for x in self.map_shape])
+        with SGM4Reader(self.filename) as file:
+            remaining_idx = itertools.product(*file.axes)
         # shuffle the remaining_idx
         remaining_idx = list(remaining_idx)
         random.shuffle(remaining_idx)

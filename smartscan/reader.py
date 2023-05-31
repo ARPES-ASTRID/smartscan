@@ -214,7 +214,7 @@ class SGM4Reader:
         steps = self.file['Entry/Data/ScanDetails/SlowAxis_step'][()]
         assert len(lengths) == len(starts) == len(steps) == self.ndim, \
             'lengths of limits and dimensionality do not match'
-        limits = [(start, start + step * length) for start, step, length in zip(starts, steps, lengths)]
+        limits = [(start, start + step * (length - 1)) for start, step, length in zip(starts, steps, lengths)]
         return limits
     
     @property
@@ -229,7 +229,7 @@ class SGM4Reader:
         lengths = self.file['Entry/Data/ScanDetails/SlowAxis_length'][()]
         starts = self.file['Entry/Data/ScanDetails/SlowAxis_start'][()]
         steps = self.file['Entry/Data/ScanDetails/SlowAxis_step'][()]
-        axes = [np.linspace(start, start + step * length, length) for start, step, length in zip(starts, steps, lengths)]
+        axes = [np.linspace(start, start + step * (length -1), length) for start, step, length in zip(starts, steps, lengths)]
         return axes
     
     @property

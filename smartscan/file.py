@@ -1,11 +1,12 @@
-from typing import Any, Tuple, Union, List, Sequence, Dict
+from typing import Any, Tuple, Union, List, Sequence, Dict, Callable
+import tqdm
 import itertools
 import numpy as np
 import h5py
 from tqdm.auto import trange
-from . import reduce
+from . import processing
 
-class SGM4Reader:
+class SGM4FileReader:
     """Reads SMG4 files."""
     INVALID_POS = -999999999.0
 
@@ -48,7 +49,7 @@ class SGM4Reader:
         """Get number of spectra in file."""
         return self.file['Entry/Data/TransformedData'].shape[0]
 
-    def get_data(self,index: int) -> np.ndarray:
+    def get_data(self,index: int | slice) -> np.ndarray:
         """Get data from file.
 
         Args:
@@ -60,7 +61,6 @@ class SGM4Reader:
         """
         ds = self.file.get('Entry/Data/TransformedData')
         assert ds is not None, 'File does not contain data'
-        assert index < ds.shape[0], 'Index out of range'
         # cache data
         if self._data is None:
             self._data = np.zeros(ds.shape)
@@ -69,14 +69,14 @@ class SGM4Reader:
             old = self._data
             self._data = np.zeros(ds.shape)
             self._data[:old.shape[0],:old.shape[1]] = old
-        
-        index = slice(index,None,None)
+        if isinstance(index, int):
+            index = slice(index,None,None)
         # read data from file if not cached
         if self._data[index].sum() == 0:
             self._data[index] = ds[index]
-        return self._data[index].squeeze()
+        return self._data[index]
     
-    def get_positions(self, index: int) -> np.ndarray:
+    def get_positions(self, index: int | slice) -> np.ndarray:
         """Get positions from file.
 
         Args:
@@ -87,7 +87,6 @@ class SGM4Reader:
         """
         ds = self.file.get('Entry/Data/ScanDetails/SetPositions')
         assert ds is not None, 'File does not contain positions'
-        assert index < ds.shape[0], 'Index out of range'
         # cache positions
         if self._positions is None:
             self._positions = np.zeros(ds.shape)
@@ -96,12 +95,38 @@ class SGM4Reader:
             old = self._positions
             self._positions = np.zeros(ds.shape)
             self._positions[:old.shape[0],:old.shape[1]] = old
-        index = slice(index,None,None)
+        if isinstance(index, int):
+            index = slice(index,None,None)
         # read positions from file if not cached
         if self._positions[index].sum() == 0:
             self._positions[index] = ds[index]
-        return self._positions[index].squeeze()
+        return self._positions[index]
 
+    def get_reduced_data(self, index: int, func:str | Callable='mean') -> dict:
+        """Get reduced data from file.
+        
+        combine positions and reduced data to a list of 1D np.array
+        
+        Args:
+            index: index of spectrum to get. If slice, get slice of data
+                if int, get single spectrum
+                
+        Returns:
+            data: data from file
+        """
+        data = self.get_data(index)
+        positions = self.get_positions(index)
+        reduced = [func(d) for d in tqdm(data,desc='Reducing spectra',leave=False)]
+        out = {}
+        # get the mean of data with the same position
+        for p,r in zip(positions,reduced):
+            if p in out:
+                out[p].append(r)
+            else:
+                out[p] = [r]
+        # combine data with the same position
+        return {k:np.mean(v,axis=0) for k,v in out.items()}
+    
     @property
     def stack(self) -> np.ndarray:
         """Get stack from file."""
@@ -123,8 +148,8 @@ class SGM4Reader:
             func = getattr(np, func)
         elif callable(func):
             pass
-        elif hasattr(reduce, func): # check if function is a function in the reduce module
-            func = getattr(reduce, func)
+        elif hasattr(processing, func): # check if function is a function in the reduce module
+            func = getattr(processing, func)
         else:
             raise ValueError("Function is not a numpy function nor a callable nor a "/
                              "function in the reduce module")
@@ -245,7 +270,11 @@ class SGM4Reader:
         dims = [d.decode('utf-8') for d in dims]
         return dims
     
-
+    @property
+    def dwell_time(self) -> float:
+        """Get dwell time from file."""
+        return 1.1 # TODO: alfred will fix
+    
     def to_xarray(self) -> np.ndarray:
         """Unravel stack into an nD array."""
         raise NotImplementedError
@@ -269,7 +298,7 @@ class SGM4Reader:
 
 if __name__ == "__main__":
     test_data = "D:\data\SGM4 - example\Testing\Controller_9.h5"
-    with SGM4Reader(test_data) as reader:
+    with SGM4FileReader(test_data) as reader:
         print(f'spectra shape {reader.spectra.shape}\n')
         print(f'ndim {reader.ndim}\n')
         print(f'limits {reader.limits}\n')
@@ -280,3 +309,4 @@ if __name__ == "__main__":
         print(f'spectra_shape {reader.spectra_shape}\n')
         print(f'positions {reader.positions.shape}\n')
         print(f'positions {reader.positions[:,:10]}\n')
+

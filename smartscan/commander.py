@@ -1,14 +1,19 @@
 import socket
 import itertools
 import random
+import asyncio
+import time
 
 from pathlib import Path
 from typing import List, Tuple, Sequence, Union
 
-from .TCP import send_tcp_message
-from .reader import SGM4Reader
+import numpy as np
+from tqdm.auto import tqdm, trange
 
-class SGM4Controller:
+from .TCP import send_tcp_message
+from .file import SGM4FileReader
+
+class SGM4Commander:
     """ Controller for the SGM4
 
     Args:
@@ -94,7 +99,6 @@ class SGM4Controller:
             self.parse_file()            
         else:
             Warning(f"Expected {self.filename} to be a file")        
-        
 
     def parse_file(self,filename:Path | str = None) -> None:
         if filename is None:
@@ -104,7 +108,7 @@ class SGM4Controller:
         assert filename.is_file(), f"Expected {filename} to be a file"
         self.filename = filename
 
-        with SGM4Reader(filename) as file:
+        with SGM4FileReader(filename) as file:
             assert self.ndim == file.ndim, f"Expected {self.ndim} dimensions, got {file.ndim}"
             sgm4_limits = [sorted(l) for l in self.limits],
             file_limits = [sorted(l) for l in file.limits],
@@ -260,7 +264,7 @@ class SGM4Controller:
         return str(split[1])
 
 
-class RandomController(SGM4Controller):
+class RandomController(SGM4Commander):
 
     def __init__(
             self, 
@@ -269,20 +273,144 @@ class RandomController(SGM4Controller):
             checksum: bool = False, 
             verbose: bool = True, 
             timeout: float = 1, 
-            buffer_size: int = 1024
+            buffer_size: int = 1024,
+            sleep_time=0.1,
     ) -> None:
         super().__init__(host, port, checksum, verbose, timeout, buffer_size)
         self.name = 'RandomController'
         self.status = 'unpaused'
+       
+        self.stack = []
+        self.data_by_position = {}
+        self.sleep_time = sleep_time
         
+    def start_scan(self, n_init:int=10, max_iter:int=None) -> None:
+        """ Start a smart scan
+         using asyncio:
+        1. initialize the scan with n random points
+        2. start the measurement loop in which:
+            1. read the data from the hdf5 file
+            2. launch the evaluation of the data
+            3. send a move command to the controller
+            4. wait for the dwell time, if points 2 to 4 are faster than the dwell time
+            5. repeat until all points are measured
+        3. end the scan
+
+        Args:
+            n_init: number of initial random points
+
+        Returns:
+            None
+        """
+        if max_iter is None:
+            max_iter = np.product(self.map_shape)
+        # initialize the scan
+        self.stack = []
+        self.data_by_position = {}
+        self.init_random(n_init)
+        # wait for the intialization scan to finish
+        time.sleep(self.sleep_time*(n_init+1))
+        # start the measurement loop
+        print('\n\n Starting the measurement loop \n\n')
+        try:
+            for i in range(max_iter-n_init):
+                t0 = time.time()
+                # read the data from the hdf5 file
+                self.update_stack()
+                # launch the evaluation of the data
+                next = self.evaluation()
+                # send a move command to the controller
+                self.ADD_POINT(*next)
+                if time.time() - t0 < self.sleep_time:
+                    time.sleep(self.sleep_time - (time.time() - t0))
+            # end the scan
+        finally:
+            self.END()
+
+    def update_stack(self) -> dict:
+        """ Update the stack with the data from the hdf5 file
+
+        Returns:
+            dict: {position: reduced data}
+        """
+        with SGM4FileReader(self.filename) as file:
+            if len(file) > len(self.stack):
+                n = len(file) - len(self.stack)
+                data = list(file.get_data(slice(-n,None,None)))
+                positions = list(file.positions[-n:])
+                for i in trange(n,desc='Updating stack'):
+                # for d,p in tqdm(zip(self.process(data),positions),total=n,desc='Processing data'):
+                    d = self.process(data[i])
+                    p = tuple(positions[i])
+                    self.stack.append([*p,d])
+                    if p not in self.data_by_position:
+                        self.data_by_position[p] = [d]
+                    else:
+                        self.data_by_position[p].append(d)
+                print(f"Added {n} points to the stack")
+
+    def process(self,data:List[np.ndarray]) -> np.ndarray:
+        """ Process the data
+
+        Args:
+            data: list of data
+
+        Returns:
+            list: processed data
+        """
+        return np.array([np.sum(data),np.mean(data),np.std(data)])
+
+    @property
+    def samples(self) -> np.ndarray:
+        """ Return the samples from the stack
+
+        Returns:
+            np.ndarray: samples
+        """
+        out = []
+        for k,v in self.data_by_position.items(): 
+            out.append([*k,*np.mean(v,axis=0)])
+        return np.array(out)
     
+
+
+    def init_random(self,n) -> None:
+        """ Initialize the scan with n random points
+
+        Args:
+            n: number of random points
+        
+        Returns:
+            None
+        """
+        with SGM4FileReader(self.filename) as file:
+            remaining_idx = itertools.product(*file.axes)
+        # shuffle the remaining_idx
+        remaining_idx = list(remaining_idx)
+        random.shuffle(remaining_idx)
+        for next in remaining_idx[:n]:
+            print(f"Measuring {next}")
+            self.ADD_POINT(*next)
+        
+    def evaluation(self) -> List[tuple]:
+        """ Evaluate the data and return the next point to measure
+
+        Returns:
+            List[tuple]: list of next points to measure
+        """
+        with SGM4FileReader(self.filename) as file:
+            all_idx = itertools.product(*file.axes)
+        remaining_idx = [idx for idx in all_idx if idx not in self.data_by_position.keys()]
+        random.shuffle(remaining_idx)
+        return remaining_idx[0]
+
     def start_random_scan(self) -> None:
         """ Start a random scan
 
         Returns:
             None
         """
-        with SGM4Reader(self.filename) as file:
+        with SGM4FileReader(self.filename) as file:
             remaining_idx = itertools.product(*file.axes)
         # shuffle the remaining_idx
         remaining_idx = list(remaining_idx)

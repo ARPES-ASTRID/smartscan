@@ -7,7 +7,7 @@ import xarray as xr
 # import dataloader as dl
 
 from .TCP import TCPServer
-from .reader import SGM4Reader
+from .file import SGM4FileReader
 
 
 class VirtualSGM4(TCPServer):
@@ -204,7 +204,7 @@ class VirtualSGM4(TCPServer):
         return f'ERROR {error}'
     
 
-class FileSGM4(SGM4Reader, VirtualSGM4):
+class FileSGM4(SGM4FileReader, VirtualSGM4):
 
     def __init__(
             self, 

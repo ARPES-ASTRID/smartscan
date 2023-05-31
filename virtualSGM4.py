@@ -6,7 +6,7 @@ if __name__ == '__main__':
         'localhost', 
         12345, 
         ndim = 2, 
-        limits=[0.0, 110.0, -100.0, 10.0], 
+        limits=[0.0, 100.0, -100.0, 0.0], 
         filename = r"D:\data\SGM4\testing\controller_9.h5",
         verbose=True,
     )

@@ -1,8 +1,12 @@
 import socket
+import itertools
+import random
+
 from pathlib import Path
 from typing import List, Tuple, Sequence, Union
 
 from .TCP import send_tcp_message
+from .reader import SGM4Reader
 
 class SGM4Controller:
     """ Controller for the SGM4
@@ -80,11 +84,31 @@ class SGM4Controller:
         self.ndim = self.NDIM()
         self.limits = self.LIMITS()
         assert len(self.limits) == self.ndim, f"Expected {self.ndim} limits, got {len(self.limits)}"
+        try:
+            self.current_pos = self.CURRENT_POS()
+            assert len(self.current_pos) == self.ndim, f"Expected {self.ndim} current positions, got {len(self.current_pos)}"
+        except IndexError:
+            pass
         self.filename = Path(self.FILENAME())
-        assert self.filename.is_file(), f"Expected {self.filename} to be a file"        
-        self.current_pos = self.CURRENT_POS()
-        assert len(self.current_pos) == self.ndim, f"Expected {self.ndim} current positions, got {len(self.current_pos)}"
-    
+        if self.filename.is_file():
+            self.parse_file()            
+        else:
+            Warning(f"Expected {self.filename} to be a file")        
+        
+
+    def parse_file(self,filename:Path | str = None) -> None:
+        if filename is None:
+            filename = self.filename
+        else:
+            filename = Path(filename)
+        assert filename.is_file(), f"Expected {filename} to be a file"
+        self.filename = filename
+
+        with SGM4Reader(filename) as file:
+            assert self.ndim == file.ndim, f"Expected {self.ndim} dimensions, got {file.ndim}"
+            assert self.limits == file.limits, f"Expected {self.limits} limits, got {file.limits}"
+            self.map_shape = file.map_shape
+
     def parse_h5_file(self, filename:str | Path) -> None:
         """Read the h5 file and get the scan info
 
@@ -98,8 +122,7 @@ class SGM4Controller:
             None
         """
         raise NotImplementedError
-    
-    
+        
     def ADD_POINT(self, *args) -> None:
         """ add a point to the scan queue 
         
@@ -117,7 +140,7 @@ class SGM4Controller:
         vals = [float(x) for x in split]
         assert cmd == 'ADD_POINT', f"Expected ADD_POINT, got {cmd}"
         assert len(vals) == self.ndim, f"Expected {self.ndim} args, got {len(vals)}"
-        if any(a != self.INVALID_NUMBER for a in vals):
+        if any(a == self.INVALID_NUMBER for a in vals):
             Warning(f"The position provided on axis {vals.index(self.INVALID_NUMBER)}"\
                     f" is invalid. "
             )
@@ -143,11 +166,23 @@ class SGM4Controller:
         response = self.send_command('LIMITS')
         split = response.split(' ')
         assert split[0] == 'LIMITS', f"Expected LIMITS, got {split[0]}"
-        limits = [tuple(lim.split(',')) for lim in split[1:]]
+        limits = [tuple([float(l) for l in lim.split(',')]) for lim in split[1:]]
         assert len(limits) == self.ndim, f"Expected {self.ndim} limits, got {len(limits)}"
         self.limits = limits
         return limits
     
+    def QUEUE(self) -> List[Tuple[float]]:
+        """ get the queue of the scan and store it in self.queue
+
+        Returns:
+            queue: list of tuples of floats
+        """
+        response = self.send_command('QUEUE')
+        split = response.split(' ')
+        assert split[0] == 'QUEUE', f"Expected QUEUE, got {split[0]}"
+        queue_size = int(split[1])
+        return queue_size
+
     def NDIM(self) -> int:
         """ get the number of dimensions and store it in self.ndim 
         
@@ -221,4 +256,38 @@ class SGM4Controller:
         assert split[0] == 'PAUSE', f"Expected PAUSE, got {response}"
         self.status = split[1]
         return str(split[1])
+
+
+class RandomController(SGM4Controller):
+
+    def __init__(
+            self, 
+            host: str, 
+            port: int, 
+            checksum: bool = False, 
+            verbose: bool = True, 
+            timeout: float = 1, 
+            buffer_size: int = 1024
+    ) -> None:
+        super().__init__(host, port, checksum, verbose, timeout, buffer_size)
+        self.name = 'RandomController'
+        self.status = 'unpaused'
+        
+    
+    def start_random_scan(self) -> None:
+        """ Start a random scan
+
+        Returns:
+            None
+        """
+        remaining_idx = itertools.product(*[range(x) for x in self.map_shape])
+        # shuffle the remaining_idx
+        remaining_idx = list(remaining_idx)
+        random.shuffle(remaining_idx)
+        for next in remaining_idx:
+            print(f"Measuring {next}")
+            self.ADD_POINT(*next)
+        self.END()
+            # self.CURRENT_POS()
+        print("Scan complete!")
 

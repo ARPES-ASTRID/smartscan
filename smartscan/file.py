@@ -59,7 +59,7 @@ class SGM4FileReader:
         Returns:
             data: data from file
         """
-        ds = self.file.get('Entry/Data/TransformedData')
+        ds = self.file['Entry/Data/TransformedData']
         assert ds is not None, 'File does not contain data'
         # cache data
         if self._data is None:
@@ -85,7 +85,7 @@ class SGM4FileReader:
         Returns:
             positions: positions from file
         """
-        ds = self.file.get('Entry/Data/ScanDetails/SetPositions')
+        ds = self.file['Entry/Data/ScanDetails/SetPositions']
         assert ds is not None, 'File does not contain positions'
         # cache positions
         if self._positions is None:

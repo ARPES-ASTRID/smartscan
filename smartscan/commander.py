@@ -316,11 +316,12 @@ class RandomController(SGM4Commander):
             for i in range(max_iter-n_init):
                 t0 = time.time()
                 # read the data from the hdf5 file
-                self.update_stack()
+                has_new = self.update_stack()
                 # launch the evaluation of the data
-                next = self.evaluation()
-                # send a move command to the controller
-                self.ADD_POINT(*next)
+                if has_new:
+                    next = self.evaluation()
+                    # send a move command to the controller
+                    self.ADD_POINT(*next)
                 if time.time() - t0 < self.sleep_time:
                     time.sleep(self.sleep_time - (time.time() - t0))
             # end the scan
@@ -348,6 +349,8 @@ class RandomController(SGM4Commander):
                     else:
                         self.data_by_position[p].append(d)
                 print(f"Added {n} points to the stack")
+                return True
+        return False
 
     def process(self,data:List[np.ndarray]) -> np.ndarray:
         """ Process the data

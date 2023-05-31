@@ -204,31 +204,42 @@ class VirtualSGM4(TCPServer):
         return f'ERROR {error}'
     
 
-class FileSGM4(VirtualSGM4):
+class FileSGM4(SGM4Reader, VirtualSGM4):
 
-    def __init__(self, ip: str, port: int, filename: str | Path = None, ndim: int = 2, limits: List[Tuple[float]] = None, verbose: bool = True, dwell_time: float = 0.1) -> None:
-        super().__init__(ip, port, filename, ndim, limits, verbose, dwell_time)
+    def __init__(
+            self, 
+            ip: str, 
+            port: int, 
+            filename: str | Path, 
+            verbose: bool = True, 
+            dwell_time: float = 0.1
+        ) -> None:
+        """ A virtual SGM4 that reads a file containing a list of points to scan.
+
+        Args:
+            ip (str): The IP address of the server.
+            port (int): The port of the server.
+            filename (str | Path): The file containing the points to scan.
+            verbose (bool, optional): Whether to print messages. Defaults to True.
+            dwell_time (float, optional): The time to wait at each point. Defaults to 0.1.
+        """
         if filename is not None:
             self.filename = Path(filename)
-            self.load_file()
+            self.open()
         else:
-            self.filename = filename
-            self.xdata = xr.DataArray()
-        self.measured = xr.zeros_like(self.xdata)
+            raise ValueError('filename cannot be None')
 
-    def load_file(self, filename: Path) -> None:
-        """ Load a file containing a list of points to scan.
-        """
-        assert filename.exists(), f'File {filename} does not exist'
-        loader = dl.smg4.SGM4Loader(filename)
-        self.xdata = loader.to_xarray()
-        self.ndim = self.xdata.ndim - 2
-        self.dims = self.xdata.dims[:-2]
-        self.limits = [(
-            self.xdata.coords[self.dims[i]].min(), 
-            self.xdata.coords[self.dims[i]].max()
-            ) for i in range(self.ndim)]
-    
+        super().__init__(
+            ip = ip,
+            port = port,
+            ndim = self.ndim,
+            filename = self.filename,
+            limits = self.limits,
+            verbose = verbose,
+            dwell_time = dwell_time,
+        )
+        self.measured = []
+
     async def measure(self, position: Sequence[float]) -> xr.DataArray:
         """ Measure the specified point.
         

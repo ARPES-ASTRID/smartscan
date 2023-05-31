@@ -6,8 +6,9 @@ if __name__ == '__main__':
         'localhost', 
         12345, 
         ndim = 2, 
-        limits=[-10000,10000,-10000,10000], 
-        verbose=True
+        limits=[0.0, 110.0, -100.0, 10.0], 
+        filename = r"D:\data\SGM4\testing\controller_9.h5",
+        verbose=True,
     )
     t0 = time.time()
     lin_pts = [

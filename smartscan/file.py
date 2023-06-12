@@ -6,7 +6,7 @@ import h5py
 from tqdm.auto import trange
 from . import processing
 
-class SGM4FileReader:
+class SGM4FileManager:
     """Reads SMG4 files."""
     INVALID_POS = -999999999.0
 
@@ -102,8 +102,25 @@ class SGM4FileReader:
             self._positions[index] = ds[index]
         return self._positions[index]
 
-    def get_reduced_data(self, index: int, func:str | Callable='mean') -> dict:
-        """Get reduced data from file.
+    def get_new_data(self,len_old_data:int) -> Tuple[np.ndarray]:
+        """Get new data from file.
+
+        args:
+            len_old_data: length of old data
+
+        Returns:
+            positions,data: positions and data from file
+        """
+        if not self.has_new_data(len_old_data):
+            return None,None
+        else:
+            new = len(self) - len_old_data
+            positions = self.get_positions(slice(-new,None,None))
+            data = self.get_data(slice(-new,None,None))
+            return positions,data
+
+    def get_merged_data(self, index: int, func:str | Callable='mean') -> dict:
+        """Get data from file. compute mean of data with the same position
         
         combine positions and reduced data to a list of 1D np.array
         
@@ -116,16 +133,65 @@ class SGM4FileReader:
         """
         data = self.get_data(index)
         positions = self.get_positions(index)
-        reduced = [func(d) for d in tqdm(data,desc='Reducing spectra',leave=False)]
-        out = {}
-        # get the mean of data with the same position
-        for p,r in zip(positions,reduced):
-            if p in out:
-                out[p].append(r)
-            else:
-                out[p] = [r]
+        merged = {}
+        counts = {}
         # combine data with the same position
-        return {k:np.mean(v,axis=0) for k,v in out.items()}
+        for p,d in tqdm(zip(positions,data),total=len(data),desc='Merging data'):
+            if p in merged:
+                merged[p] += d
+                counts[p] += 1
+            else:
+                merged[p] = d
+                counts[p] = 1
+        # get the mean of data with the same position
+        merged = {k:v/counts[k] for k,v in merged.items()}
+        return merged
+    
+    def has_new_data(self, len_old_data:int) -> bool: 
+        """Check if file has new data.
+
+        Args:
+            len_old_data: length of old data
+
+        Returns:
+            has_new_data: True if file has new data
+        """
+        return len(self) > len_old_data
+    
+    def get_reduced_data(self, index: int | slice, pipe: Sequence[str | Callable]=["sum"]) -> np.ndarray:
+        """ Apply dimensionality reduction to data from file.
+
+        Args:
+            index: index of spectrum to get. If slice, get slice of data
+                if int, get single spectrum
+            func: function to reduce data with
+        
+        Returns:
+            reduced: reduced data
+        """
+        data = self.get_combined_data(index)
+        reduced = np.zeros((len(data),len(data[0])))
+        for i,d in tqdm(enumerate(data),total=len(data),desc='Reducing data'):
+            reduced[i] = self.process(d,pipe)
+        return reduced
+
+    def process(self, data:np.ndarray, pipe: Sequence[str | Callable]) -> np.ndarray:
+        """Apply a sequence of functions to data.
+        
+        Args:
+            data: data to process
+            pipe: sequence of functions to apply to data
+        
+        Returns:
+            processed: processed data
+        """
+        processed = data
+        for f in pipe:
+            if isinstance(f,str):
+                processed = getattr(processing,f)(processed)
+            else:
+                processed = f(processed)
+        return processed
     
     @property
     def stack(self) -> np.ndarray:
@@ -222,7 +288,7 @@ class SGM4FileReader:
                 previous = corr_line
         except KeyError:
             Warning('File does not contain positions. Probably loading old data. Using axes instead.')
-            corrected =  itertools.product(*self.axes)[:len(self)]
+            corrected =  list(itertools.product(*self.axes))[:len(self)]
         return np.array(corrected)
     
     @property
@@ -240,14 +306,36 @@ class SGM4FileReader:
         assert len(lengths) == len(starts) == len(steps) == self.ndim, \
             'lengths of limits and dimensionality do not match'
         limits = [(start, start + step * (length - 1)) for start, step, length in zip(starts, steps, lengths)]
+        limits = [item for sublist in limits for item in sublist]
         return limits
     
+    @property
+    def starts(self) -> List[float]:
+        return self.file['Entry/Data/ScanDetails/SlowAxis_start'][()]
+    
+    @property
+    def steps(self) -> List[float]:
+        return self.file['Entry/Data/ScanDetails/SlowAxis_step'][()]
+    
+    @property
+    def stops(self) -> List[float]:
+        return [start + step * (length - 1) for start, step, length in zip(self.starts, self.steps, self.lengths)]
+    
+    @property
+    def lengths(self) -> List[int]:
+        return self.file['Entry/Data/ScanDetails/SlowAxis_length'][()]
+        
     @property
     def map_shape(self):
         """Get shape of map."""
         lengths = self.file['Entry/Data/ScanDetails/SlowAxis_length'][()]
         return tuple(lengths)
     
+    @property
+    def map_size(self):
+        """Get size of map."""
+        return np.prod(self.map_shape)
+
     @property
     def axes(self) -> List[np.ndarray]:
         """Get coordinate axes from file."""
@@ -289,16 +377,16 @@ class SGM4FileReader:
             index: index of nearest position
         """
         assert len(position) == self.ndim, 'length of position does not match dimensionality'
-        index = []
+        nearest = []
         for pos, axis in zip(position, self.axes):
-            assert pos >= axis[0] and pos <= axis[-1], 'position is outside of limits'
-            index.append(np.argmin(np.abs(axis - pos)))
-        return tuple(index)
+            assert axis.min() <= pos <= axis.max(), 'position is outside of limits'
+            nearest.append(axis[np.argmin(np.abs(axis - pos))])
+        return tuple(nearest)
     
 
 if __name__ == "__main__":
     test_data = "D:\data\SGM4 - example\Testing\Controller_9.h5"
-    with SGM4FileReader(test_data) as reader:
+    with SGM4FileManager(test_data) as reader:
         print(f'spectra shape {reader.spectra.shape}\n')
         print(f'ndim {reader.ndim}\n')
         print(f'limits {reader.limits}\n')

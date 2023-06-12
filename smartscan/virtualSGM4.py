@@ -5,9 +5,11 @@ from pathlib import Path
 
 import xarray as xr
 # import dataloader as dl
+import h5py
+import numpy as np
 
 from .TCP import TCPServer
-from .file import SGM4FileReader
+from .file import SGM4FileManager
 
 
 class VirtualSGM4(TCPServer):
@@ -19,34 +21,210 @@ class VirtualSGM4(TCPServer):
             ip: str,
             port: int,
             ndim: int = 2,
-            filename: Union[str, Path] = 'test.txt',
+            source_file: Union[str, Path] = None,
             limits: List[Tuple[float]] = None,
+            step_size: Sequence[float] = None,
             verbose: bool = True,
             dwell_time: float = 0.1,
     ) -> None:
         super().__init__(ip, port)
         self.queue = []
         self.status = 'IDLE' # TODO: implement status
-        self.ndim = ndim
-        self.limits = limits if limits is not None else [(10_000, 10_000)] * self.ndim
-        self.current_pos = [0] * self.ndim
+        if source_file is not None:
+            self.init_scan_from_file(source_file)
+        elif limits is not None and step_size is not None:
+            self.init_scan(ndim, limits, step_size, verbose, dwell_time)
+        self.file = None
+
+    def init_scan(
+            self,
+            *args,
+            scan_name: str = 'test',
+            dirname: str = '.',
+            verbose: bool = True,
+            dwell_time: float = 0.5,
+        ) -> None:
+        """ Initialize the scan.
+        
+        Args:
+            ndim: Number of dimensions of the scan.
+            filename: Name of the file to save the scan.
+            limits: List of tuples (min, max) for each axis.
+            step_size: List of step sizes for each axis.
+            verbose: If True, print messages.
+            dwell_time: Dwell time at each point.
+        """
+        # file management
+        filename = Path(scan_name).with_suffix('.h5')
+        if filename.exists():
+            raise FileExistsError(f'File {self.source_file} already exists.')
+        else:
+            self.target_file_name = Path(dirname) / filename
+        self.source_file = None # we use no source file, data will be random generated
+
+        # scan parameters
+        self.dims = []
+        self.starts = []
+        self.stops = []
+        self.steps = []
+        self.coords = {}
+        for arg in args:
+            dim, start, stop, step = arg
+            self.dims.append(dim)
+            self.starts.append(start)
+            self.stops.append(stop)
+            self.steps.append(step)
+            self.lengths.append(int((stop-start)/step))
+            axis = np.arange(start, stop, step)
+            self.axes.append(axis)
+            self.coords[dim] = axis
+        self.ndim = len(self.dims)
+        self.limits = [(f,t) for f,t in zip(self.starts, self.stops)]
+        self.map_shape = [len(c) for c in self.coords.values()]
+        self.signal_shape = [500,500]
+        self.dwell_time = dwell_time + 0.6
         self.verbose = verbose
-        self.dwell_time = dwell_time
-        self.wait_at_queue_empty = False
-        self.filename = filename
+        self.current_pos = [c[l//2] for c, l in zip(self.coords.values(), self.map_shape)]
+        self.positions = list(zip(*[c.ravel() for c in np.meshgrid(*self.coords.values())]))
+
+    def init_scan_from_file(self, filename: Union[str, Path], scan_name: str = None,) -> None:
+        """ Initialize the scan from a file.
+
+        Args:
+            filename: Name of the file to read.
+        """
+        self.source_file = SGM4FileManager(filename)
+        if scan_name is None:
+            scan_name = Path(filename).stem + '_virtual'
+        self.target_file_name = Path(scan_name).with_suffix('.h5')
+
+        with self.source_file as f:
+            self.dims = f.dims
+            self.ndim = f.ndim
+            self.coords = f.coords
+            self.axes = f.axes
+            self.map_shape = f.map_shape
+            self.signal_shape = f.file['Entry/Data/TransformedData'].shape[1:]
+            self.verbose = False
+            self.dwell_time = f.dwell_time
+            self.starts = f.starts
+            self.stops = f.stops
+            self.steps = f.steps
+            self.lengths = f.lengths
+            self.positions = f.positions
+            self.limits = f.limits
+            self.current_pos = [c[l//2] for c, l in zip(self.coords.values(), self.map_shape)]
+
+    def nearest_position_on_grid(self, position: Sequence[float]) -> Tuple[int]:
+        """Find nearest position in the grid.
+
+        Args:
+            position: position to find
+        
+        Returns:
+            index: index of nearest position
+        """
+        assert len(position) == self.ndim, 'length of position does not match dimensionality'
+        nearest = []
+        for pos, axis in zip(position, self.axes):
+            assert axis.min() <= pos <= axis.max(), 'position is outside of limits {} {}'.format(pos, axis)
+            nearest.append(axis[np.argmin(np.abs(axis - pos))])
+        return tuple(nearest)
+
+    def read_data(self, position:Tuple[float]) -> np.ndarray:
+        """ Read the data from the file.
+        
+        Args:
+            position: Position to read.
+        
+        Returns:
+            data: Data at the given position.
+        """
+        assert len(position) == self.ndim, f'Position {position} has wrong dimension.'
+        pos = self.nearest_position_on_grid(position)
+        if self.source_file is not None:
+            with self.source_file as f:
+                poslist = [tuple(p) for p in self.positions]
+                index = poslist.index(pos)
+                return pos, f.file['Entry/Data/TransformedData'][index]
+        else:
+            return pos, np.random.rand(*self.signal_shape)
+
+    def create_file(
+            self,
+            filename:str|Path=None,
+            filedir:str|Path='../data',
+            mode="x",
+        ) -> None:
+        """ Create the file for the scan.
+        
+        Args:
+            mode: Mode of the file. See h5py.File for details.
+            
+        Raises:
+            FileExistsError: If the file already exists.
+            """
+        
+        if filename is not None:
+            self.target_file_name = Path(filename).with_suffix('.h5')
+        if filedir is not None:
+            self.target_file_name = Path(filedir) / self.target_file_name
+        if self.target_file_name.exists():
+            raise FileExistsError(f'File {self.target_file_name} already exists.')
+        else:
+            self.target_file_name.parent.mkdir(parents=True, exist_ok=True)
+        self.log(f'Creating file {self.target_file_name}')
+        self.file = h5py.File(self.target_file_name, mode=mode, libver='latest')
+        
+        self.file.create_dataset(
+            name = "Entry/Data/TransformedData", 
+            shape = (0, *self.signal_shape), 
+            maxshape = (None, *self.signal_shape),
+            chunks = (1,*self.signal_shape), 
+            dtype='f4'
+        )
+        self.file.create_dataset(
+            name = 'Entry/Data/ScanDetails/SetPositions', 
+            shape=(0, self.ndim), 
+            maxshape=(None, self.ndim), 
+            chunks=(1, self.ndim),
+            dtype='f4'
+        )
+        self.file.create_dataset(name='Entry/Data/ScanDetails/SlowAxis_length',data=self.lengths, dtype='i4')
+        self.file.create_dataset(name='Entry/Data/ScanDetails/SlowAxis_start',data=self.starts, dtype='f4')
+        self.file.create_dataset(name='Entry/Data/ScanDetails/SlowAxis_step',data=self.steps, dtype='f4')
+        self.file.create_dataset(name='Entry/Data/ScanDetails/SlowAxis_names',data=self.dims, dtype='S10')
+        self.file.create_dataset(name='Entry/Data/ScanDetails/Dimensions',data=self.ndim, dtype='i4')
+        self.file.swmr_mode = True
+
+    def close_file(self) -> None:
+        """ Close the file.
+        """
+        if self.file is not None:        
+            self.file.close()
 
     def position_is_allowed(self, axis: int, target: float) -> bool:
         """ Check if the target position is allowed for the specified axis.
         """
         return self.limits[axis*self.ndim] <= target <= self.limits[axis*self.ndim+1]
 
-    async def measure(self) -> float:
+    def measure(self, position) -> float:
         """ Fake measuring the current position.
         """
         # wait for the dwell time
-        await asyncio.sleep(self.dwell_time)
-        # self.last_measure = 0.0
-        return 0.0
+        self.move_axis(0, position[0])
+        self.move_axis(1, position[1])
+        self.current_pos = position
+        pos, data = self.read_data(self.current_pos)
+        data_ds = self.file["Entry/Data/TransformedData"]
+        data_ds.resize((data_ds.shape[0] + 1),axis=0)
+        data_ds[-1,...] = data
+        data_ds.flush()
+        pos_ds = self.file["Entry/Data/ScanDetails/SetPositions"]
+        pos_ds.resize((pos_ds.shape[0] + 1), axis=0)
+        pos_ds[-1,...] = pos
+        pos_ds.flush()
+        return pos, data
 
     async def go_to_position(self, position: Sequence[float]) -> None:
         """ Move to the specified position.
@@ -85,6 +263,8 @@ class VirtualSGM4(TCPServer):
         Otherwise, it waits for new points to be added to the queue.
         """
         self.log('Starting scan...')
+        self.wait_at_queue_empty = True
+        self.current_pos = [np.mean(l) for l in self.limits]
         while True:
             if len(self.queue) == 0:
                 if not self.wait_at_queue_empty:
@@ -96,10 +276,12 @@ class VirtualSGM4(TCPServer):
             next_pos = self.queue.pop(0)
             self.log(f'Moving to {next_pos}')
             await self.go_to_position(next_pos)
-            _ = await self.measure()
+            _ = self.measure(next_pos)
+            await asyncio.sleep(self.dwell_time)
 
 
         self.log('Scan finished')
+        self.source_file.close()
 
     def parse_message(self, message: str) -> str:
         """ Parse a message received from the client.
@@ -198,13 +380,19 @@ class VirtualSGM4(TCPServer):
         return f'STATUS {self.status}'
     
     def FILENAME(self) -> str:
-        return f'FILENAME {self.filename}'
+        return f'FILENAME {self.target_file_name}'
 
     def ERROR(self, error: str) -> str:
         return f'ERROR {error}'
     
+    def MEASURE(self) -> str:
+        pos, data = self.measure()
+        return f'MEASURE {pos} {data.shape}'
 
-class FileSGM4(SGM4FileReader, VirtualSGM4):
+    def __del__(self) -> None:
+        self.close_file()
+
+class FileSGM4(SGM4FileManager, VirtualSGM4):
 
     def __init__(
             self, 

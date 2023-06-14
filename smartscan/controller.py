@@ -43,14 +43,32 @@ class SGM4Controller:
         self.buffer_size = buffer_size
 
         # SGM4
-        self.filename = None
-        self.ndim = None
-        self.limits = None
-        self.current_pos = None
+        self._filename = None
+        self._ndim = None
+        self._limits = None
+        self._current_pos = None
 
-        # Data
-        self.raw_data = None
-        self.reduced_data = None
+    @property
+    def filename(self) -> Path:
+        """ filename of the scan """
+        if self._filename is None:
+            self._filename = self.FILENAME()
+        return self._filename
+    
+    @property
+    def ndim(self) -> int:
+        """ number of dimensions of the scan """
+        if self._ndim is None:
+            self._ndim = self.NDIM()
+        return self._ndim
+
+    @property
+    def limits(self) -> List[List[float]]:
+        """ limits of the scan """
+        if self._limits is None:
+            self._limits = self.LIMITS()
+        return self._limits
+    
 
     def send_command(self, command, *args) -> None:
         """ send a command to SGM4 and wait for a response
@@ -93,19 +111,19 @@ class SGM4Controller:
         CURRENT_POS - where are we starting from?
         
         """
-        self.ndim = self.NDIM()
-        self.limits = self.LIMITS()
-        assert len(self.limits) == self.ndim, f"Expected {self.ndim} limits, got {len(self.limits)}"
+        self._ndim = self.NDIM()
+        self._limits = self.LIMITS()
+        assert len(self._limits) == self._ndim, f"Expected {self._ndim} limits, got {len(self._limits)}"
         try:
-            self.current_pos = self.CURRENT_POS()
-            assert len(self.current_pos) == self.ndim, f"Expected {self.ndim} current positions, got {len(self.current_pos)}"
+            self._current_pos = self.CURRENT_POS()
+            assert len(self._current_pos) == self._ndim, f"Expected {self._ndim} current positions, got {len(self._current_pos)}"
         except IndexError:
             pass
-        self.filename = Path(self.FILENAME())
-        if self.filename.is_file():
+        self._filename = Path(self.FILENAME())
+        if self._filename.is_file():
             self.parse_file()
         else:
-            Warning(f"Expected {self.filename} to be a file")        
+            Warning(f"Expected {self._filename} to be a file")        
 
     def disconnect(self) -> None:
         """ disconnect from SGM4 """
@@ -118,14 +136,14 @@ class SGM4Controller:
             filename: filename to parse
         """
         if filename is None:
-            filename = self.filename
+            filename = self._filename
         else:
             filename = Path(filename)
         assert filename.is_file(), f"Expected {filename} to be a file"
-        self.filename = filename
+        self._filename = filename
 
         with SGM4FileManager(filename) as file:
-            assert self.ndim == file.ndim, f"Expected {self.ndim} dimensions, got {file.ndim}"
+            assert self._ndim == file.ndim, f"Expected {self._ndim} dimensions, got {file.ndim}"
             # sgm4_limits = [sorted(l) for l in self.limits],
             # file_limits = [sorted(l) for l in file.limits],
             # assert sgm4_limits == file_limits, f"Expected {sgm4_limits} limits from SGM4, got {file_limits} from file"
@@ -140,14 +158,14 @@ class SGM4Controller:
         Returns:
             flag indicating success
         """
-        assert len(args) == self.ndim, f"Expected {self.ndim} args, got {len(args)}"
+        assert len(args) == self._ndim, f"Expected {self._ndim} args, got {len(args)}"
         assert all(a != self.INVALID_NUMBER for a in args), f"DO NOT move to {self.INVALID_NUMBER}"
         response = self.send_command('ADD_POINT', *args)
         split = response.split(' ')
         cmd = split.pop(0)
         vals = [float(x) for x in split]
         assert cmd == 'ADD_POINT', f"Expected ADD_POINT, got {cmd}"
-        assert len(vals) == self.ndim, f"Expected {self.ndim} args, got {len(vals)}"
+        assert len(vals) == self._ndim, f"Expected {self._ndim} args, got {len(vals)}"
         if any(a == self.INVALID_NUMBER for a in vals):
             Warning(f"The position provided on axis {vals.index(self.INVALID_NUMBER)}"\
                     f" is invalid. "
@@ -176,8 +194,8 @@ class SGM4Controller:
         split = response.split(' ')
         assert split[0] == 'LIMITS', f"Expected LIMITS, got {split[0]}"
         limits = [tuple([float(l) for l in lim.split(',')]) for lim in split[1:]]
-        assert len(limits) == self.ndim, f"Expected {self.ndim} limits, got {len(limits)}"
-        self.limits = limits
+        assert len(limits) == self._ndim, f"Expected {self._ndim} limits, got {len(limits)}"
+        self._limits = limits
         return limits
     
     def QUEUE(self) -> List[Tuple[float]]:
@@ -189,8 +207,8 @@ class SGM4Controller:
         response = self.send_command('QUEUE')
         split = response.split(' ')
         assert split[0] == 'QUEUE', f"Expected QUEUE, got {split[0]}"
-        queue_size = int(split[1])
-        return queue_size
+        # queue_size = int()
+        return split[1]
 
     def NDIM(self) -> int:
         """ get the number of dimensions and store it in self.ndim 
@@ -201,8 +219,8 @@ class SGM4Controller:
         response = self.send_command('NDIM')
         split = response.split(' ')
         assert split[0] == 'NDIM', f"Expected NDIM, got {split[0]}"
-        self.ndim = int(split[1])
-        return self.ndim
+        self._ndim = int(split[1])
+        return self._ndim
     
     def FILENAME(self) -> str:
         """ get the filename of the scan and store it in self.filename
@@ -213,8 +231,8 @@ class SGM4Controller:
         response = self.send_command('FILENAME')
         split = response.split(' ')
         assert split[0] == 'FILENAME', f"Expected FILENAME, got {split[0]}"
-        self.filename = split[1]
-        return self.filename
+        self._filename = split[1]
+        return self._filename
     
     def CURRENT_POS(self) -> List[float]:
         """ get the current position 
@@ -226,9 +244,9 @@ class SGM4Controller:
         response = self.send_command('CURRENT_POS')
         split = response.split(' ')
         assert split[0] == 'CURRENT_POS', f"Expected CURRENT_POS, got {split[0]}"
-        current_pos = {str(p[0]):float(p[1]) for p in [x.split(',') for x in split[1:]]}
+        current_pos = {str(p[0]):float(p[1]) for p in [x.split(':') for x in split[1:]]}
         assert len(current_pos) == self.ndim, f"Expected {self.ndim} positions, got {len(current_pos)}"
-        self.current_pos = current_pos
+        self._current_pos = current_pos
         return current_pos 
 
     def END(self):

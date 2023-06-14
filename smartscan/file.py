@@ -102,7 +102,7 @@ class SGM4FileManager:
             self._positions[index] = ds[index]
         return self._positions[index]
 
-    def get_new_data(self,len_old_data:int) -> Tuple[np.ndarray]:
+    def get_new_data(self,len_old_data: int) -> Tuple[np.ndarray]:
         """Get new data from file.
 
         args:

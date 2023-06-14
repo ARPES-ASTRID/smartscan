@@ -25,7 +25,7 @@ class VirtualSGM4(TCPServer):
             limits: List[Tuple[float]] = None,
             step_size: Sequence[float] = None,
             verbose: bool = True,
-            dwell_time: float = 0.1,
+            dwell_time: float = 1,
     ) -> None:
         super().__init__(ip, port)
         self.queue = []
@@ -114,6 +114,7 @@ class VirtualSGM4(TCPServer):
             self.positions = f.positions
             self.limits = f.limits
             self.current_pos = [c[l//2] for c, l in zip(self.coords.values(), self.map_shape)]
+        self.queue.append(self.current_pos)
 
     def nearest_position_on_grid(self, position: Sequence[float]) -> Tuple[int]:
         """Find nearest position in the grid.
@@ -208,13 +209,10 @@ class VirtualSGM4(TCPServer):
         """
         return self.limits[axis*self.ndim] <= target <= self.limits[axis*self.ndim+1]
 
-    def measure(self, position) -> float:
-        """ Fake measuring the current position.
-        """
-        # wait for the dwell time
-        self.move_axis(0, position[0])
-        self.move_axis(1, position[1])
-        self.current_pos = position
+    def measure(self, changed:Sequence[bool]) -> float:
+        """ Fake measuring the current position."""
+
+        self.log(f'Measuring position {self.current_pos}, changed {changed}')
         pos, data = self.read_data(self.current_pos)
         data_ds = self.file["Entry/Data/TransformedData"]
         data_ds.resize((data_ds.shape[0] + 1),axis=0)
@@ -222,6 +220,8 @@ class VirtualSGM4(TCPServer):
         data_ds.flush()
         pos_ds = self.file["Entry/Data/ScanDetails/SetPositions"]
         pos_ds.resize((pos_ds.shape[0] + 1), axis=0)
+        pos = list(pos)
+        pos[not changed] = -99999999. 
         pos_ds[-1,...] = pos
         pos_ds.flush()
         return pos, data
@@ -249,7 +249,7 @@ class VirtualSGM4(TCPServer):
         assert axis in range(self.ndim), f'Invalid axis {axis}'
         if not self.position_is_allowed(axis, target):
             self.log(f'Invalid target {target} for axis {axis}')
-        delay = abs(target - self.current_pos[axis]) / self.MOTOR_SPEED
+        delay = max(0.05,abs(target - self.current_pos[axis]) / self.MOTOR_SPEED)
         await asyncio.sleep(delay)
         self.current_pos[axis] = target
 
@@ -271,14 +271,20 @@ class VirtualSGM4(TCPServer):
                     self.log('queue is empty, stopping scan')
                     break
                 self.log('queue is empty, waiting is {}...'.format(self.wait_at_queue_empty), end='\r')
-                await asyncio.sleep(1)
-                continue
-            next_pos = self.queue.pop(0)
-            self.log(f'Moving to {next_pos}')
-            await self.go_to_position(next_pos)
-            _ = self.measure(next_pos)
+                # await asyncio.sleep(self.dwell_time)
+                changed = [False] * self.ndim
+            else:
+                next_pos = self.queue.pop(0)
+                # manhattan distance:
+                distance = sum([abs(next_pos[i] - self.current_pos[i]) for i in range(self.ndim)])
+                self.log(f'Moving to {next_pos}. takes {distance/self.MOTOR_SPEED:.2f} seconds')
+                delay = max(0.05, distance / self.MOTOR_SPEED)
+                await asyncio.sleep(delay)
+                changed = [new != old for new, old in zip(next_pos, self.current_pos)]
+                self.current_pos = next_pos
+                # await self.go_to_position(next_pos)
+            _ = self.measure(changed)
             await asyncio.sleep(self.dwell_time)
-
 
         self.log('Scan finished')
         self.source_file.close()
@@ -370,16 +376,16 @@ class VirtualSGM4(TCPServer):
         return f'NDIM {self.ndim}'
 
     def CURRENT_POS(self) -> str:
-        pos_str = ' '.join([str(x) for x in self.current_pos])
+        pos_str = ' '.join([ f'{d}:{x}' for d,x in zip(self.dims, self.current_pos)])
         return f'CURRENT_POS {pos_str}'
     
     def QUEUE(self) -> str:
-        return f'QUEUE {self.queue}'
+        return f'QUEUE {len(self.queue)}'
     
     def STATUS(self) -> str:
         return f'STATUS {self.status}'
     
-    def FILENAME(self) -> str:
+    def FILENAME(self) -> Path:
         return f'FILENAME {self.target_file_name}'
 
     def ERROR(self, error: str) -> str:

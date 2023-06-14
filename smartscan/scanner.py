@@ -30,26 +30,6 @@ class SmartScan:
         self._reduced_data = None
 
     @property
-    def data(self):
-        if self._data_dict is None:
-            raise ValueError("No data")
-        return self._data_dict.values()
-    
-    @property
-    def positions(self):
-        if self._data_dict is None:
-            raise ValueError("No data")
-        return self._data_dict.keys()
-    
-    @property
-    def reduced_data(self):
-        if self._reduced_data is None:
-            raise ValueError("No data")
-        elif len(self._reduced_data) != len(self._data_dict):
-            raise ValueError("Data not reduced")
-        return self._reduced_data.values()
-
-    @property
     def sgm4(self) -> SGM4Controller:
         if self._sgm4 is None:
             raise ValueError("SGM4 not connected")
@@ -104,7 +84,35 @@ class SmartScan:
         if self._file is None:
             raise ValueError("No file open")
         self._file.close()
+        self._file = None
+
+    def __del__(self) -> None:
+        """ Close the file and disconnect from the device """
+        if self._file is not None:
+            self.close()
+        if self._sgm4 is not None:
+            self.disconnect()
+
+    @property
+    def data(self):
+        if self._data_dict is None:
+            raise ValueError("No data")
+        return self._data_dict.values()
     
+    @property
+    def positions(self):
+        if self._data_dict is None:
+            raise ValueError("No data")
+        return self._data_dict.keys()
+    
+    @property
+    def reduced_data(self):
+        if self._reduced_data is None:
+            raise ValueError("No data")
+        elif len(self._reduced_data) != len(self._data_dict):
+            raise ValueError("Data not reduced")
+        return self._reduced_data.values()
+
     def update_data(self) -> None:
         """ Look if there is new data available and update the data attribute """
         new_positions, new_data = self.file.get_new_data(len(self._raw_data))
@@ -199,7 +207,20 @@ class SmartScan:
         finally:
             self.END()
             
+    def evaluation(self) -> Tuple[float]:
+        """ Evaluate the data and return the next position """
+        raise NotImplementedError
 
+
+class SmartScanRandom(SGM4Controller):
+
+    def evaluation(self) -> Tuple[float]:
+        """ Evaluate the data and return the next position """
+        # get the data from the stack
+        all_idx = itertools.product(*self.file.axes)
+        remaining_idx = [idx for idx in all_idx if idx not in self.positions.keys()]
+        random.shuffle(remaining_idx)
+        return remaining_idx[0]
 
 class RandomCommander(SGM4Controller):
 
@@ -271,7 +292,7 @@ class RandomCommander(SGM4Controller):
         Returns:
             dict: {position: reduced data}
         """
-        with SGM4FileManager(self.filename) as file:
+        with SGM4FileManager(self._filename) as file:
             if len(file) > len(self.stack):
                 n = len(file) - len(self.stack)
                 data = list(file.get_data(slice(-n,None,None)))
@@ -321,7 +342,7 @@ class RandomCommander(SGM4Controller):
         Returns:
             None
         """
-        with SGM4FileManager(self.filename) as file:
+        with SGM4FileManager(self._filename) as file:
             remaining_idx = itertools.product(*file.axes)
         # shuffle the remaining_idx
         remaining_idx = list(remaining_idx)
@@ -336,7 +357,7 @@ class RandomCommander(SGM4Controller):
         Returns:
             List[tuple]: list of next points to measure
         """
-        with SGM4FileManager(self.filename) as file:
+        with SGM4FileManager(self._filename) as file:
             all_idx = itertools.product(*file.axes)
         remaining_idx = [idx for idx in all_idx if idx not in self.data_by_position.keys()]
         random.shuffle(remaining_idx)
@@ -348,7 +369,7 @@ class RandomCommander(SGM4Controller):
         Returns:
             None
         """
-        with SGM4FileManager(self.filename) as file:
+        with SGM4FileManager(self._filename) as file:
             remaining_idx = itertools.product(*file.axes)
         # shuffle the remaining_idx
         remaining_idx = list(remaining_idx)

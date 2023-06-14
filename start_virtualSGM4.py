@@ -2,10 +2,14 @@ from smartscan.virtualSGM4 import VirtualSGM4
 import time
 import numpy as np
 from pathlib import Path
+import asyncio
 
 if __name__ == '__main__':
 
-    source_file = r"D:\data\SGM4 - 2022 - CrSBr\data\Kiss05_15_1.h5"
+    # source_file = r"D:\data\SGM4 - 2022 - CrSBr\data\Kiss05_15_1.h5"
+    source_file =  Path(r"D:\data\SGM4\SmartScan\Z006_46.h5")
+    source_file =  Path(r"D:\data\SGM4\SmartScan\Z006_35_0.h5")
+
     name = Path(source_file).stem
 
     vm = VirtualSGM4(

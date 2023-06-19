@@ -93,7 +93,8 @@ class SmartScan:
         if self._file is not None:
             raise ValueError("Already open")
         self._file = SGM4FileManager(filename)
-        self.file.open()
+        if not self._file.touch():
+            raise ValueError("Could not read file")
 
     def close(self) -> None:
         """ Close the file """

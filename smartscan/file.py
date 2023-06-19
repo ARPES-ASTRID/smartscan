@@ -133,7 +133,7 @@ class SGM4FileManager:
             new = len(self) - len_old_data
             positions = self.get_positions(slice(-new,None,None))
             data = self.get_data(slice(-new,None,None))
-            return positions,data
+            return positions, data
 
     def get_merged_data(self, index: int, func:str | Callable='mean') -> dict:
         """Get data from file. compute mean of data with the same position

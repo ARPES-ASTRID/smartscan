@@ -26,6 +26,7 @@ class SmartScan:
         self._raw_data = None
         self._raw_positions = None
         self._data_dict = None
+        self._counts_dict = None
         self._reduced_data = None
         self._limits = None
 
@@ -111,7 +112,7 @@ class SmartScan:
             self.disconnect()
 
     @property
-    def data_dict(self):
+    def raw_data(self):
         if self._raw_data is None:
             raise ValueError("No data")
         return self._raw_data
@@ -120,13 +121,27 @@ class SmartScan:
     def values(self):
         if self._data_dict is None:
             raise ValueError("No data")
-        return self._data_dict.values()
+        vals = np.array(tuple(self._data_dict.values()))
+        weights = self.weights
+        assert len(vals) == len(weights), "data values weights dont have the same shape!"
+        return vals * weights[:,None,None]
     
     @property
     def positions(self):
         if self._data_dict is None:
             raise ValueError("No data")
-        return self._data_dict.keys()
+        return np.array(tuple(self._data_dict.keys()))
+    
+    @property
+    def counts(self):
+        if self._counts_dict is None:
+            raise ValueError("No data")
+        return np.array(tuple(self._counts_dict.values()))
+    
+    @property
+    def weights(self):
+        # TODO: implement beam current normalization here
+        return self.counts
     
     @property
     def reduced_data(self):
@@ -134,7 +149,7 @@ class SmartScan:
             raise ValueError("No data")
         elif len(self._reduced_data) != len(self._data_dict):
             raise ValueError("Data not reduced")
-        return self._reduced_data.values()
+        return np.array(tuple(self._reduced_data.values()))
 
     @property
     def reduced_values(self):
@@ -142,21 +157,24 @@ class SmartScan:
             raise ValueError("No data")
         elif len(self._reduced_data) != len(self._data_dict):
             raise ValueError("Data not reduced")
-        return self._reduced_data.values()
+        return np.array(tuple(self._reduced_data.values()))
     
     def update_data(self) -> None:
         """ Look if there is new data available and update the data attribute """
-        new_positions, new_data = self.file.get_new_data(len(self._raw_data))
-        data_dict = self.combine_data_by_position(new_positions, new_data)
-        if self._raw_data is None:
-            self._raw_data = new_data
-            self._raw_positions = new_positions
-            self._data_dict = data_dict
-
+        len_data_so_far = len(self._raw_data) if self._raw_data is not None else 0
+        new_positions, new_data = self.file.get_new_data(len_data_so_far)
+        data_dict, counts_dict = self.combine_data_by_position(new_positions, new_data)
         if new_data is not None:
-            self.raw_data = np.concatenate([self.raw_data, new_data], axis=0)
-            self.raw_positions = np.concatenate([self.raw_positions, new_positions], axis=0)
-            self.data = self._data_dict.update(data_dict)
+            if self._raw_data is None:
+                self._raw_data = new_data
+                self._raw_positions = new_positions
+                self._data_dict = data_dict
+                self._counts_dict = counts_dict
+            else:
+                self._raw_data = np.concatenate([self._raw_data, new_data], axis=0)
+                self._raw_positions = np.concatenate([self._raw_positions, new_positions], axis=0)
+                self._data_dict = self._data_dict.update(data_dict)
+                self._counts_dict = self._counts_dict.update(counts_dict)
         
     @staticmethod
     def combine_data_by_position(positions, data, pbar=True) -> Dict[Tuple[float], np.ndarray]:
@@ -171,9 +189,18 @@ class SmartScan:
         """
         unique_positions = np.unique(positions, axis=0)
         combined_data = {}# = np.zeros((len(unique_positions), *data.shape[1:]))
-        for pos in tqdm(unique_positions, disable=not pbar, desc="Combining data"):
-            combined_data[pos] = np.mean(data[positions == pos], axis=0)
-        return combined_data
+        counts = {}
+        # for pos in tqdm(unique_positions, disable=not pbar, desc="Combining data"):
+        #     combined_data[pos] = np.mean(data[positions == pos], axis=0)
+        for pos, d in tqdm(zip(positions,data),disable=not pbar, desc='Combining same position data'):
+            pos_tuple = tuple(pos)
+            if pos_tuple in combined_data.keys():
+                combined_data[pos_tuple] += d
+                counts[pos_tuple] += 1
+            else:
+                combined_data[pos_tuple] = d
+                counts[pos_tuple] = 1
+        return combined_data, counts
 
     def reduce_data(
             self,  

@@ -38,6 +38,7 @@ class SGM4FileManager:
 
     def open(self) -> None:
         """Open file."""
+        Warning('File is opened, this might mess up saving data!')
         self.file = h5py.File(self.filename, 'r', swmr=self.swmr)
     
     def close(self) -> None:
@@ -47,7 +48,8 @@ class SGM4FileManager:
     
     def __len__(self) -> int:
         """Get number of spectra in file."""
-        return self.file['Entry/Data/TransformedData'].shape[0]
+        with h5py.File(self.filename, 'r', swmr=self.swmr) as f:
+            return f['Entry/Data/TransformedData'].shape[0]
 
     def get_data(self,index: int | slice) -> np.ndarray:
         """Get data from file.
@@ -59,22 +61,23 @@ class SGM4FileManager:
         Returns:
             data: data from file
         """
-        ds = self.file['Entry/Data/TransformedData']
-        assert ds is not None, 'File does not contain data'
-        # cache data
-        if self._data is None:
-            self._data = np.zeros(ds.shape)
-        elif self._data.shape != ds.shape: 
-            # resize if shape is different
-            old = self._data
-            self._data = np.zeros(ds.shape)
-            self._data[:old.shape[0],:old.shape[1]] = old
-        if isinstance(index, int):
-            index = slice(index,None,None)
-        # read data from file if not cached
-        if self._data[index].sum() == 0:
-            self._data[index] = ds[index]
-        return self._data[index]
+        with h5py.File(self.filename, 'r', swmr=self.swmr) as f:
+            ds = f['Entry/Data/TransformedData']
+            assert ds is not None, 'File does not contain data'
+            # cache data
+            if self._data is None:
+                self._data = np.zeros(ds.shape)
+            elif self._data.shape != ds.shape: 
+                # resize if shape is different
+                old = self._data
+                self._data = np.zeros(ds.shape)
+                self._data[:old.shape[0],:old.shape[1]] = old
+            if isinstance(index, int):
+                index = slice(index,None,None)
+            # read data from file if not cached
+            if self._data[index].sum() == 0:
+                self._data[index] = ds[index]
+            return self._data[index]
     
     def get_positions(self, index: int | slice) -> np.ndarray:
         """Get positions from file.
@@ -85,22 +88,23 @@ class SGM4FileManager:
         Returns:
             positions: positions from file
         """
-        ds = self.file['Entry/Data/ScanDetails/SetPositions']
-        assert ds is not None, 'File does not contain positions'
-        # cache positions
-        if self._positions is None:
-            self._positions = np.zeros(ds.shape)
-        elif self._positions.shape != ds.shape: 
-            # resize if shape is different
-            old = self._positions
-            self._positions = np.zeros(ds.shape)
-            self._positions[:old.shape[0],:old.shape[1]] = old
-        if isinstance(index, int):
-            index = slice(index,None,None)
-        # read positions from file if not cached
-        if self._positions[index].sum() == 0:
-            self._positions[index] = ds[index]
-        return self._positions[index]
+        with h5py.File(self.filename, 'r', swmr=self.swmr) as f:
+            ds = f['Entry/Data/ScanDetails/SetPositions']
+            assert ds is not None, 'File does not contain positions'
+            # cache positions
+            if self._positions is None:
+                self._positions = np.zeros(ds.shape)
+            elif self._positions.shape != ds.shape: 
+                # resize if shape is different
+                old = self._positions
+                self._positions = np.zeros(ds.shape)
+                self._positions[:old.shape[0],:old.shape[1]] = old
+            if isinstance(index, int):
+                index = slice(index,None,None)
+            # read positions from file if not cached
+            if self._positions[index].sum() == 0:
+                self._positions[index] = ds[index]
+            return self._positions[index]
 
     def get_new_data(self,len_old_data: int) -> Tuple[np.ndarray]:
         """Get new data from file.
@@ -249,17 +253,19 @@ class SGM4FileManager:
     @property
     def raw_data(self) -> np.ndarray:
         """Get stack from file."""
-        return self.file["Entry/Data/TransformedData"][()]
+        with h5py.File(self.filename, 'r', swmr=self.swmr) as f:
+            return f["Entry/Data/TransformedData"][()]
     
     @property
     def raw_dims(self) -> Tuple[int]:
         """Get shape of spectra."""
-        dims = self.file['Entry/Data/ScanDetails/SlowAxis_names'][()]
-        return dims
+        with h5py.File(self.filename, 'r', swmr=self.swmr) as f:
+            return f['Entry/Data/ScanDetails/SlowAxis_names'][()]
 
     @property
     def raw_shape(self) -> Tuple[int]:
-        return self.file['Entry/Data/ScanDetails/SlowAxis_names'][()]
+        with h5py.File(self.filename, 'r', swmr=self.swmr) as f:
+            return f['Entry/Data/ScanDetails/SlowAxis_names'][()]
 
     @property
     def positions(self) -> Tuple[np.ndarray]:
@@ -271,21 +277,22 @@ class SGM4FileManager:
             positions: array of positions
         """
         try:
-            pos_array = self.file['Entry/Data/ScanDetails/SetPositions'][()]
-            corrected = []
-            previous = None
-            for line in pos_array:
-                assert len(line) == self.ndim, 'length of position does not match dimensionality'
-                corr_line = []
-                for i, p in enumerate(line):
-                    if p == self.INVALID_POS:
-                        if previous is None:
-                            raise ValueError('First position is invalid')
-                        else:
-                            p = previous[i]
-                    corr_line.append(p)
-                corrected.append(corr_line)
-                previous = corr_line
+            with h5py.File(self.filename, 'r', swmr=self.swmr) as f:
+                pos_array = f['Entry/Data/ScanDetails/SetPositions'][()]
+                corrected = []
+                previous = None
+                for line in pos_array:
+                    assert len(line) == self.ndim, 'length of position does not match dimensionality'
+                    corr_line = []
+                    for i, p in enumerate(line):
+                        if p == self.INVALID_POS:
+                            if previous is None:
+                                raise ValueError('First position is invalid')
+                            else:
+                                p = previous[i]
+                        corr_line.append(p)
+                    corrected.append(corr_line)
+                    previous = corr_line
         except KeyError:
             Warning('File does not contain positions. Probably loading old data. Using axes instead.')
             corrected =  list(itertools.product(*self.axes))[:len(self)]
@@ -294,28 +301,32 @@ class SGM4FileManager:
     @property
     def ndim(self) -> int:
         """Get number of dimensions from file."""
-        ndim = int(self.file['Entry/Data/ScanDetails/Dimensions'][()])
-        return ndim
+        with h5py.File(self.filename, 'r', swmr=self.swmr) as f:
+            return int(f['Entry/Data/ScanDetails/Dimensions'][()])
     
     @property
     def limits(self) -> List[Tuple[float]]:
         """Get limits from file."""
-        lengths = self.file['Entry/Data/ScanDetails/SlowAxis_length'][()]
-        starts = self.file['Entry/Data/ScanDetails/SlowAxis_start'][()]
-        steps = self.file['Entry/Data/ScanDetails/SlowAxis_step'][()]
-        assert len(lengths) == len(starts) == len(steps) == self.ndim, \
-            'lengths of limits and dimensionality do not match'
-        limits = [(start, start + step * (length - 1)) for start, step, length in zip(starts, steps, lengths)]
-        limits = [item for sublist in limits for item in sublist]
-        return limits
+        with h5py.File(self.filename, 'r', swmr=self.swmr) as f:
+
+            lengths = f['Entry/Data/ScanDetails/SlowAxis_length'][()]
+            starts = f['Entry/Data/ScanDetails/SlowAxis_start'][()]
+            steps = f['Entry/Data/ScanDetails/SlowAxis_step'][()]
+            assert len(lengths) == len(starts) == len(steps) == self.ndim, \
+                'lengths of limits and dimensionality do not match'
+            limits = [(start, start + step * (length - 1)) for start, step, length in zip(starts, steps, lengths)]
+            limits = [item for sublist in limits for item in sublist]
+            return limits
     
     @property
     def starts(self) -> List[float]:
-        return self.file['Entry/Data/ScanDetails/SlowAxis_start'][()]
+        with h5py.File(self.filename, 'r', swmr=self.swmr) as f:
+            return f['Entry/Data/ScanDetails/SlowAxis_start'][()]
     
     @property
     def steps(self) -> List[float]:
-        return self.file['Entry/Data/ScanDetails/SlowAxis_step'][()]
+        with h5py.File(self.filename, 'r', swmr=self.swmr) as f:
+            return f['Entry/Data/ScanDetails/SlowAxis_step'][()]
     
     @property
     def stops(self) -> List[float]:
@@ -323,13 +334,14 @@ class SGM4FileManager:
     
     @property
     def lengths(self) -> List[int]:
-        return self.file['Entry/Data/ScanDetails/SlowAxis_length'][()]
+        with h5py.File(self.filename, 'r', swmr=self.swmr) as f:
+            return f['Entry/Data/ScanDetails/SlowAxis_length'][()]
         
     @property
     def map_shape(self):
         """Get shape of map."""
-        lengths = self.file['Entry/Data/ScanDetails/SlowAxis_length'][()]
-        return tuple(lengths)
+        with h5py.File(self.filename, 'r', swmr=self.swmr) as f:
+            return tuple(f['Entry/Data/ScanDetails/SlowAxis_length'][()])
     
     @property
     def map_size(self):
@@ -339,11 +351,12 @@ class SGM4FileManager:
     @property
     def axes(self) -> List[np.ndarray]:
         """Get coordinate axes from file."""
-        lengths = self.file['Entry/Data/ScanDetails/SlowAxis_length'][()]
-        starts = self.file['Entry/Data/ScanDetails/SlowAxis_start'][()]
-        steps = self.file['Entry/Data/ScanDetails/SlowAxis_step'][()]
-        axes = [np.linspace(start, start + step * (length -1), length) for start, step, length in zip(starts, steps, lengths)]
-        return axes
+        with h5py.File(self.filename, 'r', swmr=self.swmr) as f:
+            lengths = f['Entry/Data/ScanDetails/SlowAxis_length'][()]
+            starts = f['Entry/Data/ScanDetails/SlowAxis_start'][()]
+            steps = f['Entry/Data/ScanDetails/SlowAxis_step'][()]
+            axes = [np.linspace(start, start + step * (length -1), length) for start, step, length in zip(starts, steps, lengths)]
+            return axes
     
     @property
     def coords(self) -> Dict[str, np.ndarray]:
@@ -354,7 +367,8 @@ class SGM4FileManager:
     @property
     def dims(self) -> np.ndarray:
         """Get dimensions from file."""
-        dims = self.file['Entry/Data/ScanDetails/SlowAxis_names'][()]
+        with h5py.File(self.filename, 'r', swmr=self.swmr) as f:
+            dims = f['Entry/Data/ScanDetails/SlowAxis_names'][()]
         dims = [d.decode('utf-8') for d in dims]
         return dims
     
@@ -371,13 +385,14 @@ class SGM4FileManager:
             _description_
         """
         try:
-            bc = self.file['Entry/Instrument/Monochromator/Beam Current'][()]
-            if bc[0] == bc[-1] == -1:
-                bc = np.ones(len(self))
-                Warining('Beam current not recorded. Using 1.0 instead.')
+            with h5py.File(self.filename, 'r', swmr=self.swmr) as f:
+                bc = f['Entry/Instrument/Monochromator/Beam Current'][()]
+                if bc[0] == bc[-1] == -1:
+                    bc = np.ones(len(self))
+                    Warning('Beam current not recorded. Using 1.0 instead.')
         except KeyError:
             bc = np.ones(len(self))
-            Warining('File does not contain beam current. Using 1.0 instead.')
+            Warning('File does not contain beam current. Using 1.0 instead.')
         
         return bc
 

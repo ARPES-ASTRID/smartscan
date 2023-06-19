@@ -34,7 +34,7 @@ class SmartScanGP(SmartScan):
         self.input_space_dimension = kwargs.pop('input_space_dimension',2)
         self.output_space_dimension = kwargs.pop('output_space_dimension',1)
         self.output_number = kwargs.pop('output_number',2)
-        self.input_space_bounds = self.limits
+        self.input_space_bounds = None
         # gp init_fvgp params
         self.init_hyperparameters = kwargs.pop('init_hyperparameters',None)
         self.device = kwargs.pop('device',None)
@@ -92,6 +92,9 @@ class SmartScanGP(SmartScan):
         assert len(self.points) > 0, "No data to train the GP"
 
         # get kwargs for the gp
+        if self.input_space_bounds is None: # get info from the scan settings
+            self.input_space_bounds = self.limits
+
         self.update_gp_params(**kwargs)
         
         self.gp = fvGPOptimizer(
@@ -142,8 +145,6 @@ class SmartScanGP(SmartScan):
         self.update_gp_params(**kwargs)
         self.gp.train_gp_async(
             hyperparameter_bounds=self.hyperparameter_bounds,
-            max_iter = self.max_iter,
-            hyperparameter_bounds = self.hyperparameter_bounds,
             max_iter = self.max_iter,
             dask_client = self.dask_client,
             deflation_radius = self.deflation_radius,

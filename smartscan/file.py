@@ -44,7 +44,7 @@ class SGM4FileManager:
         """Close file."""
         if self.file is not None:
             self.file.close()
-
+    
     def __len__(self) -> int:
         """Get number of spectra in file."""
         return self.file['Entry/Data/TransformedData'].shape[0]

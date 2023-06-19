@@ -27,6 +27,18 @@ class SmartScan:
         self._raw_positions = None
         self._data_dict = None
         self._reduced_data = None
+        self._limits = None
+
+    @property
+    def limits(self) -> List[Tuple[float]]:
+        if self._limits is None:
+            file_lims = self.file.limits
+            sgm4_lims = self.sgm4.limits
+            if file_lims != sgm4_lims:
+                Warning('limits from file and from sgm4 do not match!')
+            else:
+                self._limits = file_limits
+        return self._limits
 
     @property
     def sgm4(self) -> SGM4Controller:
@@ -48,11 +60,11 @@ class SmartScan:
         if self._sgm4 is not None:
             raise ValueError("Already connected")
         if isinstance(host,Path):
-            ldr = Fake_SGM4Controller
+            Ctrl = Fake_SGM4Controller
         # if ldr is an IP:
-        elif ldr == 'localhost': #TODO: impolement real IP address
-            ldr = SGM4Controller
-        self._sgm4 = ldr(
+        elif host == 'localhost': #TODO: impolement real IP address
+            Ctrl = SGM4Controller
+        self._sgm4 = Ctrl(
             host=host, 
             port=port, 
             checksum=checksum, 

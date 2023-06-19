@@ -45,6 +45,14 @@ class SGM4FileManager:
         """Close file."""
         if self.file is not None:
             self.file.close()
+
+    def touch(self) -> None:
+        """Touch file to check if all is ok.
+        
+        TODO: add initialization checks
+        """
+        with h5py.File(self.filename, 'a', swmr=self.swmr) as f:
+            pass
     
     def __len__(self) -> int:
         """Get number of spectra in file."""

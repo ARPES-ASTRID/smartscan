@@ -1,4 +1,4 @@
-from typing import Dict, Tuple, Union, Sequence, List, Callable
+from typing import Dict, Tuple, List, Callable
 import time
 import itertools
 import random
@@ -6,10 +6,9 @@ from pathlib import Path
 import numpy as np
 from tqdm.auto import tqdm, trange
 
-from .controller import SGM4Controller
+from .controller import SGM4Controller, Fake_SGM4Controller
 from .file import SGM4FileManager
 from .virtualSGM4 import VirtualSGM4
-
 
 
 class SmartScan:
@@ -48,7 +47,12 @@ class SmartScan:
         """ Connect to the device """
         if self._sgm4 is not None:
             raise ValueError("Already connected")
-        self._sgm4 = SGM4Controller(
+        if isinstance(host,Path):
+            ldr = Fake_SGM4Controller
+        # if ldr is an IP:
+        elif ldr == 'localhost': #TODO: impolement real IP address
+            ldr = SGM4Controller
+        self._sgm4 = ldr(
             host=host, 
             port=port, 
             checksum=checksum, 
@@ -94,7 +98,13 @@ class SmartScan:
             self.disconnect()
 
     @property
-    def data(self):
+    def data_dict(self):
+        if self._raw_data is None:
+            raise ValueError("No data")
+        return self._raw_data
+    
+    @property
+    def values(self):
         if self._data_dict is None:
             raise ValueError("No data")
         return self._data_dict.values()
@@ -113,6 +123,14 @@ class SmartScan:
             raise ValueError("Data not reduced")
         return self._reduced_data.values()
 
+    @property
+    def reduced_values(self):
+        if self._reduced_data is None:
+            raise ValueError("No data")
+        elif len(self._reduced_data) != len(self._data_dict):
+            raise ValueError("Data not reduced")
+        return self._reduced_data.values()
+    
     def update_data(self) -> None:
         """ Look if there is new data available and update the data attribute """
         new_positions, new_data = self.file.get_new_data(len(self._raw_data))
@@ -144,33 +162,28 @@ class SmartScan:
             combined_data[pos] = np.mean(data[positions == pos], axis=0)
         return combined_data
 
-    def reduce(
+    def reduce_data(
             self,  
-            transform:Sequence[Callable],str = ['mean','std'],
+            transform:Callable,
+            *args,
             pbar: bool = True,
+            **kwargs
         ) -> None:
         """ reduce the data to a single value
 
         Args:
-            data: data to reduce
-            method: method to use for reduction
+            transform: transformation to apply to the data. Must be a callable which 
+                takes the data as first argument, args and kwargs, and returns n values 
+                equal to the number of input parameters of the gaussian process.
+            args: args to pass to the transform
+            kwargs: kwargs to pass to the transform  
+            pbar: show progress bar
         """
         n_new = len(self.data) - len(self.reduced_data)
         new_data = self.data[-n_new:]
         new_pos = self.positions[-n_new:]
         for pos, data in tqdm(zip(new_pos,new_data), desc="Reducing data", total=n_new, disable=not pbar):
-            
-            for t in transform:
-                if isinstance(t,str):
-                    if hasattr(np,t):
-                        data = getattr(np,t)(data)
-                elif isinstance(t,callable):
-                    data = t(data)
-                else:
-                    raise NotImplementedError(
-                        f"transform {transform} is neither a callable or a numpy method"
-                    )
-            self._reduced_data[pos] = data
+            self._reduced_data[pos] = transform(data, *args, **kwargs)
 
     def init_random(self, n_init:int = 10, ) -> None:
         """ Initialize the measurement loop with random points """
@@ -195,12 +208,12 @@ class SmartScan:
             for i in range(max_iter-self.n_init):
                 t0 = time.time()
                 # read the data from the hdf5 file
-                has_new = self.update_stack()
-                # launch the evaluation of the data
-                if has_new:
-                    next = self.evaluation()
-                    # send a move command to the controller
-                    self.sgm4.ADD_POINT(*next)
+                self.update_data()
+                self.reduce_data(pbar=False)
+                # evaluate the next position
+                next = self.evaluation()
+                # send a move command to the controller
+                self.sgm4.ADD_POINT(*next)
                 if time.time() - t0 < self.sleep_time:
                     time.sleep(self.sleep_time - (time.time() - t0))
             # end the scan
@@ -221,6 +234,7 @@ class SmartScanRandom(SGM4Controller):
         remaining_idx = [idx for idx in all_idx if idx not in self.positions.keys()]
         random.shuffle(remaining_idx)
         return remaining_idx[0]
+
 
 class RandomCommander(SGM4Controller):
 

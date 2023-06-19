@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import List, Tuple, Sequence, Union, Dict
 import numpy as np
 from tqdm.auto import tqdm, trange
+import h5py
 
 from .TCP import send_tcp_message
 from .file import SGM4FileManager
@@ -284,3 +285,17 @@ class SGM4Controller:
         self.status = split[1]
         return str(split[1])
 
+
+class Fake_SGM4Controller(SGM4Controller):
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._current_pos = {str(i):0 for i in range(self._ndim)}
+        self._limits = [(0,0) for i in range(self._ndim)]
+        self._source_file_name = 'test.sgm4'
+        self._filename = 'test.sgm4'
+        self._ndim = 2
+
+    def connect(self):
+        self.source_file = h5py.File(self._source_file_name, 'r')
+        

@@ -363,6 +363,36 @@ class SGM4FileManager:
         """Get dwell time from file."""
         return 1.1 # TODO: alfred will fix
     
+    @property
+    def beam_current(self) -> float:
+        """ get beam current from file
+
+        Returns:
+            _description_
+        """
+        try:
+            bc = self.file['Entry/Instrument/Monochromator/Beam Current'][()]
+            if bc[0] == bc[-1] == -1:
+                bc = np.ones(len(self))
+                Warining('Beam current not recorded. Using 1.0 instead.')
+        except KeyError:
+            bc = np.ones(len(self))
+            Warining('File does not contain beam current. Using 1.0 instead.')
+        
+        return bc
+
+    def normalize_to_beam_current(self, img) -> np.ndarray:
+        """Normalize image to beam current.
+
+        Args:
+            img: image to normalize
+        
+        Returns:
+            img: normalized image
+        """
+        return img /(self.beam_current[:, None, None] * self.dwell_time)
+
+
     def to_xarray(self) -> np.ndarray:
         """Unravel stack into an nD array."""
         raise NotImplementedError

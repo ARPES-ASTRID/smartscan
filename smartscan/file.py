@@ -52,7 +52,7 @@ class SGM4FileManager:
         TODO: add initialization checks
         """
         try:
-            with h5py.File(self.filename, 'a', swmr=self.swmr) as f:
+            with h5py.File(self.filename, 'r', swmr=self.swmr) as f:
                 pass
         except FileNotFoundError:
             return False

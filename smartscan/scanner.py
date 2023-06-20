@@ -38,7 +38,7 @@ class SmartScan:
             if file_lims != sgm4_lims:
                 Warning('limits from file and from sgm4 do not match!')
             else:
-                self._limits = file_limits
+                self._limits = file_lims
         return self._limits
 
     @property

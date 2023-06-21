@@ -48,8 +48,6 @@ class SmartScanGP(SmartScan):
         self.tolerance = kwargs.pop('tolerance',1e-6)
         self.max_iter = kwargs.pop('max_iter',2)
         # train gp kwargs
-        self.hyperparameter_bounds = kwargs.pop('hyperparameter_bounds',None)
-        self.max_iter = kwargs.pop('max_iter', 10000)
         self.dask_client = kwargs.pop('dask_client', None)
         self.deflation_radius = kwargs.pop('deflation_radius', None)
         self.constraints = kwargs.pop('constraints', ())

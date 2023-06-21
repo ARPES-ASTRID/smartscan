@@ -163,6 +163,8 @@ class SmartScan:
         """ Look if there is new data available and update the data attribute """
         len_data_so_far = len(self._raw_data) if self._raw_data is not None else 0
         new_positions, new_data = self.file.get_new_data(len_data_so_far)
+        if new_positions is None or new_data is None:
+            raise RuntimeError('no new data found')
         data_dict, counts_dict = self.combine_data_by_position(new_positions, new_data)
         if new_data is not None:
             if self._raw_data is None:
@@ -187,12 +189,13 @@ class SmartScan:
         Returns:
             data: combined data
         """
-        unique_positions = np.unique(positions, axis=0)
+        # unique_positions = np.unique(positions, axis=0)
         combined_data = {}# = np.zeros((len(unique_positions), *data.shape[1:]))
         counts = {}
         # for pos in tqdm(unique_positions, disable=not pbar, desc="Combining data"):
         #     combined_data[pos] = np.mean(data[positions == pos], axis=0)
-        for pos, d in tqdm(zip(positions,data),disable=not pbar, desc='Combining same position data'):
+        print(f'pos size {len(positions)} data size {len(data)}')
+        for pos, d in tqdm(zip(positions,data),total=len(data),disable=not pbar, desc='Combining same position data'):
             pos_tuple = tuple(pos)
             if pos_tuple in combined_data.keys():
                 combined_data[pos_tuple] += d

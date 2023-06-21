@@ -89,6 +89,7 @@ class SGM4FileManager:
             # read data from file if not cached
             if self._data[index].sum() == 0:
                 self._data[index] = ds[index]
+            # print(f'sending data with shape {ds[index,...].shape}')
             return self._data[index]
     
     def get_positions(self, index: int | slice) -> np.ndarray:
@@ -101,7 +102,8 @@ class SGM4FileManager:
             positions: positions from file
         """
         with h5py.File(self.filename, 'r', swmr=self.swmr) as f:
-            ds = f['Entry/Data/ScanDetails/SetPositions']
+            # ds = f['Entry/Data/ScanDetails/SetPositions']
+            ds = f['Entry/Data/ScanDetails/TruePositions']
             assert ds is not None, 'File does not contain positions'
             # cache positions
             if self._positions is None:
@@ -116,7 +118,8 @@ class SGM4FileManager:
             # read positions from file if not cached
             if self._positions[index].sum() == 0:
                 self._positions[index] = ds[index]
-            return self._positions[index]
+        return self._positions[index]
+        
 
     def get_new_data(self,len_old_data: int) -> Tuple[np.ndarray]:
         """Get new data from file.
@@ -131,9 +134,19 @@ class SGM4FileManager:
             return None,None
         else:
             new = len(self) - len_old_data
+            print(f'found {new} spectra')
             positions = self.get_positions(slice(-new,None,None))
-            data = self.get_data(slice(-new,None,None))
+            data = self.get_last_n_spectra(new)#get_data(slice(-new,None,None))
+            print(f'data shape {data.shape}')
             return positions, data
+        
+    def get_last_n_spectra(self,n):
+        out = np.zeros((n,640,400))
+        for i in range(n):
+            with h5py.File(self.filename, 'r', swmr=self.swmr) as f:
+                ds = f['Entry/Data/TransformedData']
+                out[-i,:,:] = ds[-i,:,:]
+        return out
 
     def get_merged_data(self, index: int, func:str | Callable='mean') -> dict:
         """Get data from file. compute mean of data with the same position

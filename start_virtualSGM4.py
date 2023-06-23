@@ -14,7 +14,7 @@ if __name__ == '__main__':
 
     vm = VirtualSGM4(
         'localhost', 
-        12345, 
+        54333, 
         verbose=True,
     )
     vm.init_scan_from_file(filename=source_file)

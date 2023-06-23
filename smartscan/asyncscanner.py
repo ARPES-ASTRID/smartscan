@@ -33,7 +33,6 @@ fvgp_pars = {
 }
 ask_pars = {
     'n': 1, 
-    'acquisition_function': None,
     'bounds': None,
     'method': 'global', 
     'pop_size': 20, 
@@ -46,7 +45,7 @@ cost_func_params = {
     'speed':300,
     'dwell_time':1.0,
     'dead_time':0.6,
-    'point_to_um':15,
+    # 'point_to_um':15,
     'weight':1.0,
     'min_distance':1.6
 }
@@ -68,18 +67,20 @@ class AsyncScanManager:
             port:int =54333, 
             buffer_size:int =  1024*1024*8,
             train_at: Sequence[int]= [20,40,80,160,320,640,1280,2560,5120,10240],
+            duration: float= 1000,
             logger=None
         ) -> None:
         self.host = host
         self.port = port
         self.buffer_size = buffer_size
+        self.duration = duration
         self.remote = SGM4Commands(host, port, buffer_size=buffer_size)
 
         self._raw_data_queue = asyncio.Queue()
         self._reduced_data_queue = asyncio.Queue()
-        self._gp_queue = asyncio.Queue()
-        self._positions = []
-        self._values = []
+        self.gp = None
+        self.positions = []
+        self.values = []
         self.train_at = train_at
 
         if logger is not None:
@@ -153,7 +154,7 @@ class AsyncScanManager:
 
     async def reduction_loop(self):
         while not self._should_stop:
-            self.logger.info('reduction looping...')
+            # self.logger.info('reduction looping...')
             if self._raw_data_queue.qsize() > 0:
                 pos,data = await self._raw_data_queue.get()
                 reduced = np.asarray([data.mean(), data.std()])
@@ -169,64 +170,61 @@ class AsyncScanManager:
             while True:
                 try:
                     pos, data = self._reduced_data_queue.get_nowait()
-                    self._positions.append(pos)
-                    self._values.append(data)
+                    self.positions.append(pos)
+                    self.values.append(data)
                 except asyncio.QueueEmpty:
                     break
             if self.gp is not None:
-                print(np.asarray(self.positions), np.asarray(self.values))
                 self.gp.tell(np.asarray(self.positions), np.asarray(self.values))
-            self.logger.info(f'Updated data and positions. Total: {len(self.positions)} last Pos {self.positions[-1]}.')
+            self.logger.info(f'Updated data and positions. Total: {len(self.positions)} last Pos {self.positions[-1]} {self.values[-1]}.')
             return True
         else:
-            self.logger.info('No data to update.')
+            # self.logger.info('No data to update.')
             return False
 
     async def gp_loop(self):
 
-        self.logger.info('Starting GP initialization.')
-        self.gp = fvGPOptimizer(
-            input_space_bounds = self.remote.limits,
-            input_space_dimension= 2,
-            output_space_dimension = 1,
-            output_number = 2,  
-        )
-        has_new_data = False
-        attempts = 0
-        while not has_new_data or attempts < 100:
-            has_new_data = self.update_data_and_positions()
-            attempts += 1
-            await asyncio.sleep(.1)
-        self.logger.info(f'Initialized GP with {len(self.positions)} samples.')
-        self.gp.init_fvgp(**fvgp_pars)
-        self.logger.info('Initialized GP. Training...')
-        self.gp.train_gp(**train_pars)
-        self.gp.init_cost(
-            compute_costs, 
-            prev_points = self.gp.x_data, 
-            point_to_um = self.remote.step_size[0],
-            **cost_func_params
-        )
-
-        # start gp loop
-        self.logger.info('Starting GP loop.')
         while not self._should_stop:
-
             has_new_data = self.update_data_and_positions()
             if has_new_data:
-                self.logger.info('gp looping...')
-                if len(self.positions) in self.train_at:
-                    self.logger.info(f'Training GP with {len(self.positions)} samples.')
+                if self.gp is None:
+                    self.logger.info('Starting GP initialization.')
+                    self.gp = fvGPOptimizer(
+                        input_space_bounds = self.remote.limits,
+                        input_space_dimension= 2,
+                        output_space_dimension = 1,
+                        output_number = 2,  
+                    )
+                    self.gp.tell(np.asarray(self.positions), np.asarray(self.values))
+                    self.logger.info(f'Initialized GP with {len(self.positions)} samples.')
+                    self.gp.init_fvgp(**fvgp_pars)
+                    self.logger.info('Initialized GP. Training...')
                     self.gp.train_gp(**train_pars)
-                answer = self.gp.ask(**ask_pars, aquisition_function=ndim_aqfunc)
-                next_pos = answer['x']
-                pos_on_grid = closest_point_on_grid(next_pos, axes=self.remote.axes)
-                self.logger.info(f'Next suggestesd position: {next_pos} rounded to {pos_on_grid}')
-                self.remote.ADD_POINT(pos_on_grid)
+                    cost_func_params.update({
+                                    'prev_points': self.gp.x_data, 
+                                    'point_to_um': self.remote.step_size[0],
+                    })
+                    self.gp.init_cost(
+                        compute_costs, 
+                        cost_function_parameters = cost_func_params,
+                    )
+                else:
+                    self.logger.info('gp looping...')
+                    if len(self.positions) in self.train_at:
+                        print('############################################################\n\n\n')
+                        self.logger.info(f'Training GP with {len(self.positions)} samples.')
+                        print('\n\n\n############################################################')
+                        self.gp.train_gp(**train_pars)
+                    answer = self.gp.ask(**ask_pars, acquisition_function=ndim_aqfunc)
+                    next_pos = answer['x']
+                    pos_on_grid = closest_point_on_grid(next_pos, axes=self.remote.axes)
+                    self.logger.info(f'Next suggestesd position: {next_pos} rounded to {pos_on_grid}')
+                    self.remote.ADD_POINT(*pos_on_grid)
             else:
                 self.logger.debug('No data to update.')
+
                 await asyncio.sleep(.2)
-        
+    
     # async def training_loop(self):
     #     while not self._should_stop:
     #         if self.gp is not None:
@@ -242,18 +240,23 @@ class AsyncScanManager:
     def stop(self):
         self.logger.info('Stopping all loops.')
         self.kill()
-        self.close()
 
     def kill(self):
         self.logger.info('Killing all loops.')
         self._should_stop = True
 
-    async def killer_loop(self,duration=20):
+    async def killer_loop(self,duration=None):
+        if duration is None:
+            duration = self.duration
         await asyncio.sleep(duration)
         self.logger.info('Killer loop strikes!.')
         self.stop()
        
 if __name__ == '__main__':
+    import os
+    # an unsafe, unsupported, undocumented workaround :
+    os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
+
     import argparse
     import logging
     parser = argparse.ArgumentParser(description='AsyncScanManager')
@@ -261,7 +264,7 @@ if __name__ == '__main__':
     parser.add_argument('--port', type=int, default=54333, help='SGM4 port')
     parser.add_argument('--loglevel', type=str, default='DEBUG', help='Log level')
     # parser.add_argument('--logdir', type=str, default='logs', help='Log directory')
-    parser.add_argument('--duration', type=int, default=20, help='Duration of the scan in seconds')
+    parser.add_argument('--duration', type=int, default=1000, help='Duration of the scan in seconds')
     parser.add_argument('--train_at', type=int, nargs='+', default=[10,20,30,40,50,60,70,80,90,100], help='Train GP at these number of samples')
     args = parser.parse_args()
 
@@ -285,6 +288,7 @@ if __name__ == '__main__':
         port=args.port,
         logger=logger,
         train_at=args.train_at,
+        duration = args.duration,
     )
 
     # start scan manager

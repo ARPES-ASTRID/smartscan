@@ -103,7 +103,7 @@ class TCPServer:
             checksum: bool = False, 
             verbose: bool = True,
             timeout: float = 0.1,
-            message_size: int = 1024,
+            message_size: int = 1024*1024*16,
             ) -> None:
         self.verbose = verbose
         self.checksum = checksum
@@ -218,7 +218,7 @@ class TCPClient:
             checksum:bool=False,
             verbose:bool=True,
             timeout:float=1.0,
-            buffer_size:int=1024,
+            buffer_size:int=1024*1024*8,
             ) -> None:
         self.host = host
         self.port = port
@@ -234,7 +234,7 @@ class TCPClient:
         Connect to the TCP server.
         """
         self.reader, self.writer = await asyncio.open_connection(
-            self.host, self.port)
+            self.host, self.port, limit=self.buffer_size)
 
     async def send_message(self, message: str):
         """
@@ -276,8 +276,12 @@ class TCPClient:
         """
         self.writer.close()
     
-    # def __del__(self):
-    #     self.close()
+    def __del__(self):
+        try:
+            self.close()
+        except:
+            pass
+
 
 if __name__ == '__main__':
     server = TCPServer('localhost', 12345)

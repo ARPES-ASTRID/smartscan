@@ -25,6 +25,7 @@ class VirtualSGM4(TCPServer):
             limits: List[Tuple[float]] = None,
             step_size: Sequence[float] = None,
             verbose: bool = True,
+            buffer_size:int = 1024*1024*8,
             dwell_time: float = 1,
     ) -> None:
         super().__init__(ip, port)
@@ -392,8 +393,11 @@ class VirtualSGM4(TCPServer):
         return f'ERROR {error}'
     
     def MEASURE(self) -> str:
-        pos, data = self.measure()
-        return f'MEASURE {pos} {data.shape}'
+        # pos, data = self.measure()
+        pos_str =  ' '.join([str(v) for v in self.current_pos])
+        data_str = ' '.join([str(np.round(v,4).astype(np.float32)) for v in np.random.rand(640,400).ravel()])
+        time.sleep(np.random.rand(1)[0])
+        return f'MEASURE {len(self.current_pos)} {pos_str} {data_str}'
 
     def __del__(self) -> None:
         self.close_file()

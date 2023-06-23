@@ -216,6 +216,7 @@ class TCPClient:
             host: str, 
             port: int,
             checksum:bool=False,
+            end: str = '\r\n',
             verbose:bool=True,
             timeout:float=1.0,
             buffer_size:int=1024*1024*8,
@@ -228,6 +229,7 @@ class TCPClient:
         self.timeout = timeout
         self.checksum = checksum
         self.buffer_size = buffer_size
+        self.end = end
 
     async def connect(self):
         """
@@ -245,6 +247,8 @@ class TCPClient:
         """
         if self.checksum:
             message = add_checksum(message)
+        if self.end:
+            message += self.end
         self.writer.write(message.encode('utf-8'))
         await self.writer.drain()
 

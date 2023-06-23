@@ -28,6 +28,11 @@ def closest_point_on_int_grid(x: Tuple[float], grid_shape:Tuple[int]) -> Tuple[i
     grid = np.asarray(tuple(product([range(s) for s in grid_shape])))
     return grid[np.linalg.norm(grid-x,axis=1).argmin()]
 
+def closest_point_on_grid(x: Tuple[float], axes:Sequence[Sequence[float]]) -> Tuple[int]:
+    """Find the closest point in a grid to a given point"""
+    grid = np.asarray(tuple(product(*axes)))
+    return grid[np.linalg.norm(grid-x,axis=1).argmin()]
+
 def scan_time(
         positions: Tuple[float], 
         movement_cost_func: Callable, 

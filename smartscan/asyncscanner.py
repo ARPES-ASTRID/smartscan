@@ -46,8 +46,8 @@ cost_func_params = {
     'dwell_time':1.0,
     'dead_time':0.6,
     # 'point_to_um':15,
-    'weight':1.0,
-    'min_distance':1.6
+    'weight':.1,
+    'min_distance':.99
 }
 
 
@@ -67,13 +67,15 @@ class AsyncScanManager:
             port:int =54333, 
             buffer_size:int =  1024*1024*8,
             train_at: Sequence[int]= [20,40,80,160,320,640,1280,2560,5120,10240],
-            duration: float= 1000,
+            duration: float=None,
+            max_iterations: int=1000,
             logger=None
         ) -> None:
         self.host = host
         self.port = port
         self.buffer_size = buffer_size
         self.duration = duration
+        self.max_iterations = max_iterations
         self.remote = SGM4Commands(host, port, buffer_size=buffer_size)
 
         self._raw_data_queue = asyncio.Queue()
@@ -106,6 +108,7 @@ class AsyncScanManager:
             self.fetch_data_loop(),
         )
         self.logger.info('All loops finished.')
+        self.remote.END()
 
     async def async_fetch_data(self):
         # DEPRECATED
@@ -183,8 +186,12 @@ class AsyncScanManager:
             return False
 
     async def gp_loop(self):
-
+        iter_counter = 0
         while not self._should_stop:
+            iter_counter += 1
+            if iter_counter > self.max_iterations:
+                self.logger.info(f"Max number of iterations of {self.max_iterations} reached. Ending scan.")
+                self._should_stop = True
             has_new_data = self.update_data_and_positions()
             if has_new_data:
                 if self.gp is None:
@@ -225,6 +232,7 @@ class AsyncScanManager:
 
                 await asyncio.sleep(.2)
     
+        self.remote.END()
     # async def training_loop(self):
     #     while not self._should_stop:
     #         if self.gp is not None:
@@ -241,32 +249,40 @@ class AsyncScanManager:
         self.logger.info('Stopping all loops.')
         self.kill()
 
+
     def kill(self):
         self.logger.info('Killing all loops.')
         self._should_stop = True
 
+        
+
     async def killer_loop(self,duration=None):
         if duration is None:
             duration = self.duration
-        await asyncio.sleep(duration)
-        self.logger.info('Killer loop strikes!.')
-        self.stop()
+        if duration is not None:
+            await asyncio.sleep(duration)
+            self.logger.info('Killer loop strikes!.')
+            self.stop()
        
+
 if __name__ == '__main__':
+    print('Running asyncscanner...')
     import os
     # an unsafe, unsupported, undocumented workaround :
     os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 
     import argparse
-    import logging
     parser = argparse.ArgumentParser(description='AsyncScanManager')
     parser.add_argument('--host', type=str, default='localhost', help='SGM4 host')
     parser.add_argument('--port', type=int, default=54333, help='SGM4 port')
     parser.add_argument('--loglevel', type=str, default='DEBUG', help='Log level')
     # parser.add_argument('--logdir', type=str, default='logs', help='Log directory')
-    parser.add_argument('--duration', type=int, default=1000, help='Duration of the scan in seconds')
-    parser.add_argument('--train_at', type=int, nargs='+', default=[10,20,30,40,50,60,70,80,90,100], help='Train GP at these number of samples')
+    parser.add_argument('--duration', type=int, default=None, help='Duration of the scan in seconds')
+    parser.add_argument('--train_at', type=int, nargs='+', default=[10,20,30,40,50,60,70,80,90,100,200,400,800], help='Train GP at these number of samples')
     args = parser.parse_args()
+
+
+    import logging
 
     # init logger
     logger = logging.getLogger('async_scan_manager')
@@ -281,7 +297,7 @@ if __name__ == '__main__':
     # fh.setLevel(args.loglevel)
     # fh.setFormatter(formatter)
     # logger.addHandler(fh)
-
+    print('init asyncscanner object')
     # init scan manager
     scan_manager = AsyncScanManager(
         host=args.host,

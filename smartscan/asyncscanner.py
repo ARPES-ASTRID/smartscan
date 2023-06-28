@@ -2,7 +2,7 @@ from typing import Callable, Sequence, Tuple, Union, List
 import asyncio
 import numpy as np
 from smartscan.TCP import send_tcp_message
-from smartscan.gp import fvGPOptimizer, ndim_aqfunc, compute_costs
+from smartscan.gp import fvGPOptimizer, ndim_aqfunc, compute_costs,plot_acqui_f
 from smartscan.sgm4commands import SGM4Commands
 from smartscan.utils import closest_point_on_grid
 
@@ -227,6 +227,7 @@ class AsyncScanManager:
                     pos_on_grid = closest_point_on_grid(next_pos, axes=self.remote.axes)
                     self.logger.info(f'Next suggestesd position: {next_pos} rounded to {pos_on_grid}')
                     self.remote.ADD_POINT(*pos_on_grid)
+                    #plot_acqui_f(self.gp)
             else:
                 self.logger.debug('No data to update.')
 

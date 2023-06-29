@@ -94,22 +94,6 @@ class AsyncScanManager:
             logger = Logger()
         self.logger.info('Initialized AsyncScanManager.')
 
-    async def all_loops(self):
-        """
-        Start all the loops.
-        """
-        # loop_methods = [getattr(self, method)() for method in dir(self) if method.endswith('_loop')]
-        # await asyncio.gather(*loop_methods)
-        await asyncio.gather(
-            self.gp_loop(),
-            # self.training_loop(),
-            self.killer_loop(),
-            self.reduction_loop(),
-            self.fetch_data_loop(),
-        )
-        self.logger.info('All loops finished.')
-        self.remote.END()
-
     async def async_fetch_data(self):
         # DEPRECATED
         await self.tcp.connect()
@@ -144,20 +128,45 @@ class AsyncScanManager:
             case _:
                 self.logger.warning(f'Unknown message code: {msg_code}')
                 return message, None
-            
+        
+    def update_data_and_positions(self):
+        """ Get data from SGM4"""
+        if self._reduced_data_queue.qsize() > 0:
+            self.logger.debug('Updating data and positions.')
+            n_new = 0
+            while True:
+                try:
+                    pos, data = self._reduced_data_queue.get_nowait()
+                    self.positions.append(pos)
+                    self.values.append(data)
+                    n_new += 1
+                except asyncio.QueueEmpty:
+                    break
+            if self.gp is not None:
+                self.gp.tell(np.asarray(self.positions), np.asarray(self.values))
+            self.logger.info(f'Updated data with {n_new} new points. Total: {len(self.positions)} last Pos {self.positions[-1]} {self.values[-1]}.')
+            return True
+        else:
+            self.logger.debug('No data in processed queue.')
+            return False
+
     async def fetch_data_loop(self):
         """ Get data from SGM4"""
+        self.logger.info('Starting fetch data loop.')
         while not self._should_stop:
+            self.logger.info('Fetch data looping...')
             pos, data = await self.fetch_data()
             if data is not None:
                 self._raw_data_queue.put_nowait((pos, data))
-                self.logger.debug(f'Put data in queue: {pos}, {data}')
+                self.logger.debug(f'Put raw data in queue: {pos}, {data}')
             else:
+                self.logger.debug('No data received.')
                 await asyncio.sleep(.5)
 
     async def reduction_loop(self):
+        self.logger.info('Starting reduction loop.')
         while not self._should_stop:
-            # self.logger.info('reduction looping...')
+            self.logger.info('reduction looping...')
             if self._raw_data_queue.qsize() > 0:
                 pos,data = await self._raw_data_queue.get()
                 reduced = np.asarray([data.mean(), data.std()])
@@ -165,37 +174,23 @@ class AsyncScanManager:
                 self._reduced_data_queue.put_nowait((pos,reduced))
                 self.logger.info(f'added {(pos,reduced)} to processed queue, currently {self._reduced_data_queue.qsize()}')
             else:
+                self.logger.debug('No data in raw data queue.')
                 await asyncio.sleep(.2)
-    
-    def update_data_and_positions(self):
-        """ Get data from SGM4"""
-        if self._reduced_data_queue.qsize() > 0:
-            while True:
-                try:
-                    pos, data = self._reduced_data_queue.get_nowait()
-                    self.positions.append(pos)
-                    self.values.append(data)
-                except asyncio.QueueEmpty:
-                    break
-            if self.gp is not None:
-                self.gp.tell(np.asarray(self.positions), np.asarray(self.values))
-            self.logger.info(f'Updated data and positions. Total: {len(self.positions)} last Pos {self.positions[-1]} {self.values[-1]}.')
-            return True
-        else:
-            # self.logger.info('No data to update.')
-            return False
 
     async def gp_loop(self):
         iter_counter = 0
+        self.logger.info('Starting GP loop.')
+
         while not self._should_stop:
-            iter_counter += 1
+            self.logger.debug('GP looping...')
             if iter_counter > self.max_iterations:
                 self.logger.info(f"Max number of iterations of {self.max_iterations} reached. Ending scan.")
                 self._should_stop = True
             has_new_data = self.update_data_and_positions()
             if has_new_data:
+                iter_counter += 1
                 if self.gp is None:
-                    self.logger.info('Starting GP initialization.')
+                    self.logger.debug('Starting GP initialization.')
                     self.gp = fvGPOptimizer(
                         input_space_bounds = self.remote.limits,
                         input_space_dimension= 2,
@@ -207,6 +202,7 @@ class AsyncScanManager:
                     self.gp.init_fvgp(**fvgp_pars)
                     self.logger.info('Initialized GP. Training...')
                     self.gp.train_gp(**train_pars)
+
                     cost_func_params.update({
                                     'prev_points': self.gp.x_data, 
                                     'point_to_um': self.remote.step_size[0],
@@ -227,19 +223,29 @@ class AsyncScanManager:
                     pos_on_grid = closest_point_on_grid(next_pos, axes=self.remote.axes)
                     self.logger.info(f'Next suggestesd position: {next_pos} rounded to {pos_on_grid}')
                     self.remote.ADD_POINT(*pos_on_grid)
-                    #plot_acqui_f(self.gp)
+                    # plot_acqui_f(self.gp)
             else:
                 self.logger.debug('No data to update.')
-
                 await asyncio.sleep(.2)
     
         self.remote.END()
-    # async def training_loop(self):
-    #     while not self._should_stop:
-    #         if self.gp is not None:
-    #             self.gp.train_gp(**train_pars)
-    #         self.logger.info('training looping...')
-    #         await asyncio.sleep(1)
+
+    async def all_loops(self):
+        """
+        Start all the loops.
+        """
+        # loop_methods = [getattr(self, method)() for method in dir(self) if method.endswith('_loop')]
+        # await asyncio.gather(*loop_methods)
+        await asyncio.gather(
+            # self.training_loop(),
+            self.killer_loop(),
+            self.reduction_loop(),
+            self.fetch_data_loop(),
+            self.gp_loop(),
+
+        )
+        self.logger.info('All loops finished.')
+        self.remote.END()
 
     async def start(self):
         self.logger.info('Starting all loops.')
@@ -250,14 +256,12 @@ class AsyncScanManager:
         self.logger.info('Stopping all loops.')
         self.kill()
 
-
     def kill(self):
         self.logger.info('Killing all loops.')
         self._should_stop = True
 
-        
-
     async def killer_loop(self,duration=None):
+        self.logger.info(f'Starting killer loop. Will kill process after {duration} seconds.')
         if duration is None:
             duration = self.duration
         if duration is not None:
@@ -270,7 +274,7 @@ if __name__ == '__main__':
     print('Running asyncscanner...')
     import os
     # an unsafe, unsupported, undocumented workaround :
-    os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
+    # os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 
     import argparse
     parser = argparse.ArgumentParser(description='AsyncScanManager')

@@ -1,4 +1,5 @@
 from typing import Callable, Sequence, Tuple
+import logging
 import numpy as np
 
 from ..utils import manhattan_distance
@@ -7,7 +8,8 @@ def movement_cost(
         origin: tuple, 
         x: tuple, 
         cost_func_params: dict = None, 
-        verbose: bool = False
+        verbose=False,
+        logger=None,
     ) -> float:
     """Compute the cost of moving from x to y
     
@@ -24,6 +26,8 @@ def movement_cost(
         float: cost of moving from x to y, expressed in seconds
 
     """
+    if logger is None:
+        logger = logging.getLogger('movement_cost')
     x = np.array(x)
     if len(x.shape) == 1:
         x = x.reshape(-1,1)
@@ -47,7 +51,7 @@ def movement_cost(
         if np.any(all_distances < min_distance):
             idx = np.argmin(all_distances - min_distance)
             if verbose:
-                print(f"Point {np.asarray(x).ravel()} close to previous point {prev_points[idx]}: d={all_distances[idx]}")
+                logger.debug(f"Point {np.asarray(x).ravel()} close to previous point {prev_points[idx]}: d={all_distances[idx]}")
             return [1_000_000]
     # if any([manhattan_distance(x,p) < min_distance for p in prev_points]):
     #     print(f"Point {x} close to previous points")
@@ -60,7 +64,7 @@ def movement_cost(
     distance = manhattan_distance(origin,x) * point_to_um
     time = weight * distance / speed  + dwell_time + dead_time
     if verbose:
-        print(f"Distance: {distance:.2f} um, Time: {time:.2f} s"
+        logger.debug(f"Distance: {distance:.2f} um, Time: {time:.2f} s"
             f" (dwell: {dwell_time:.2f} s, dead: {dead_time:.2f} s)" 
         )
     return time
@@ -70,11 +74,15 @@ def compute_costs(
         x: Sequence[tuple], 
         cost_func: Callable = movement_cost,
         cost_func_params: dict = None, 
-        verbose=False
+        verbose=False,
+        logger=None,
     ) -> float:
+    if logger is None:
+        logger = logging.getLogger('compute_costs')
     cost = []
     for xx in x:
-        movcost = movement_cost(origin,xx,cost_func_params,verbose=verbose)
+        movcost = cost_func(origin,xx,cost_func_params,verbose=verbose,logger=logger)
         cost.append(movcost)
+    logger.debug(f"Costs computed: {cost}")
     return np.asarray(cost).T
 

@@ -1,4 +1,7 @@
 from typing import Callable, Sequence, Tuple, Union, List
+from pathlib import Path
+from datetime import datetime
+import json
 import asyncio
 import numpy as np
 from smartscan.TCP import send_tcp_message
@@ -93,6 +96,36 @@ class AsyncScanManager:
         else:
             logger = Logger()
         self.logger.info('Initialized AsyncScanManager.')
+
+    def save_settings(self, filename:str='settings.json', folder:str='./') -> None:
+        # save to file
+        folder = Path(folder) if folder is not None else Path.cwd()
+        filename = Path(filename)
+        if folder/filename.exists():
+            filename = Path(f'{filename.stem}_{datetime.now().strftime("%Y%m%d_%H%M%S")}{filename.suffix}')
+        filepath = folder/filename
+        all_dict = {
+            'host': self.host,
+            'port': self.port,
+            'buffer_size': self.buffer_size,
+            'duration': self.duration,
+            'max_iterations': self.max_iterations,
+            'train_at': self.train_at,
+        }
+        for dict_ in [optimizer_pars, train_pars, fvgp_pars, ask_pars, cost_func_params]:
+            # make lists of any numpy array
+            out = {}
+            for k,v in dict_.items():
+                if isinstance(v, np.ndarray):
+                    out[k] = v.tolist()
+                else:
+                    out[k] = v
+            all_dict.update(out)
+
+        with open(filepath, 'w') as fp:
+            json.dump(all_dict, fp)
+        return filepath
+        
 
     async def async_fetch_data(self):
         # DEPRECATED
@@ -190,6 +223,8 @@ class AsyncScanManager:
             if has_new_data:
                 iter_counter += 1
                 if self.gp is None:
+                    filename = self.save_settings()
+                    self.logger.info(f'saved settings to {filename}')
                     self.logger.debug('Starting GP initialization.')
                     self.gp = fvGPOptimizer(
                         input_space_bounds = self.remote.limits,

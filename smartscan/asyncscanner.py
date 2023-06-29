@@ -8,6 +8,7 @@ from smartscan.TCP import send_tcp_message
 from smartscan.gp import fvGPOptimizer, ndim_aqfunc, compute_costs,plot_acqui_f
 from smartscan.sgm4commands import SGM4Commands
 from smartscan.utils import closest_point_on_grid
+import matplotlib.pyplot as plt 
 
 optimizer_pars = {
     'input_space_dimension': 2,
@@ -46,8 +47,8 @@ ask_pars = {
 }
 cost_func_params = {
     'speed':300,
-    'dwell_time':1.0,
-    'dead_time':0.6,
+    'dwell_time':0.5,
+    'dead_time':0.1,
     # 'point_to_um':15,
     'weight':.1,
     'min_distance':.99
@@ -67,11 +68,12 @@ class AsyncScanManager:
     def __init__(
             self,
             host:str = 'localhost', 
-            port:int =54333, 
+            port:int = 54333,
             buffer_size:int =  1024*1024*8,
             train_at: Sequence[int]= [20,40,80,160,320,640,1280,2560,5120,10240],
             duration: float=None,
             max_iterations: int=1000,
+            use_cost_function:bool = True,
             logger=None
         ) -> None:
         self.host = host
@@ -80,6 +82,11 @@ class AsyncScanManager:
         self.duration = duration
         self.max_iterations = max_iterations
         self.remote = SGM4Commands(host, port, buffer_size=buffer_size)
+        self.remote.connect()
+        if len(self.remote.axes[0]) == 0:
+            raise ValueError('failed initializing axes!!')
+        else:
+            print(f' Axes is {self.remote.axes}')
 
         self._raw_data_queue = asyncio.Queue()
         self._reduced_data_queue = asyncio.Queue()
@@ -87,6 +94,8 @@ class AsyncScanManager:
         self.positions = []
         self.values = []
         self.train_at = train_at
+        self.use_cost_function = use_cost_function
+        self.replot = False
 
         if logger is not None:
 
@@ -126,7 +135,6 @@ class AsyncScanManager:
             json.dump(all_dict, fp)
         return filepath
         
-
     async def async_fetch_data(self):
         # DEPRECATED
         await self.tcp.connect()
@@ -202,7 +210,9 @@ class AsyncScanManager:
             self.logger.info('reduction looping...')
             if self._raw_data_queue.qsize() > 0:
                 pos,data = await self._raw_data_queue.get()
+                
                 reduced = np.asarray([data.mean(), data.std()])
+                reduced = reduced * 1000
                 # self.logger.info(f'adding {(pos,reduced)} to processed queue')
                 self._reduced_data_queue.put_nowait((pos,reduced))
                 self.logger.info(f'added {(pos,reduced)} to processed queue, currently {self._reduced_data_queue.qsize()}')
@@ -223,8 +233,8 @@ class AsyncScanManager:
             if has_new_data:
                 iter_counter += 1
                 if self.gp is None:
-                    filename = self.save_settings()
-                    self.logger.info(f'saved settings to {filename}')
+                    # filename = self.save_settings()
+                    # self.logger.info(f'saved settings to {filename}')
                     self.logger.debug('Starting GP initialization.')
                     self.gp = fvGPOptimizer(
                         input_space_bounds = self.remote.limits,
@@ -237,15 +247,15 @@ class AsyncScanManager:
                     self.gp.init_fvgp(**fvgp_pars)
                     self.logger.info('Initialized GP. Training...')
                     self.gp.train_gp(**train_pars)
-
-                    cost_func_params.update({
-                                    'prev_points': self.gp.x_data, 
-                                    'point_to_um': self.remote.step_size[0],
-                    })
-                    self.gp.init_cost(
-                        compute_costs, 
-                        cost_function_parameters = cost_func_params,
-                    )
+                    if self.use_cost_function:
+                        cost_func_params.update({
+                                        'prev_points': self.gp.x_data, 
+                                        'point_to_um': self.remote.step_size[0],
+                        })
+                        self.gp.init_cost(
+                            compute_costs, 
+                            cost_function_parameters = cost_func_params,
+                        )
                 else:
                     self.logger.info('gp looping...')
                     if len(self.positions) in self.train_at:
@@ -255,15 +265,31 @@ class AsyncScanManager:
                         self.gp.train_gp(**train_pars)
                     answer = self.gp.ask(**ask_pars, acquisition_function=ndim_aqfunc)
                     next_pos = answer['x']
-                    pos_on_grid = closest_point_on_grid(next_pos, axes=self.remote.axes)
-                    self.logger.info(f'Next suggestesd position: {next_pos} rounded to {pos_on_grid}')
-                    self.remote.ADD_POINT(*pos_on_grid)
-                    # plot_acqui_f(self.gp)
+                    try:
+                        pos_on_grid = closest_point_on_grid(next_pos, axes=self.remote.axes)
+                        self.logger.info(f'Next suggestesd position: {next_pos} rounded to {pos_on_grid}')
+                        self.remote.ADD_POINT(*pos_on_grid)
+                    except ValueError:
+                        self.logger.error(f'Error comparing {next_pos} to previous positions to set it on grid. with axes {self.remote.axes}')
+                    self.replot = True
             else:
                 self.logger.debug('No data to update.')
                 await asyncio.sleep(.2)
     
         self.remote.END()
+
+    async def plotting_loop(self):
+        self.logger.info('starting plotting tool loop')
+        fig = plt.figure('ACQ func',figsize=(10,8), layout='constrained')
+
+        while not self._should_stop:
+            if self.replot:
+                self.replot = False
+                fig.clear()
+                plot_acqui_f(gp=self.gp,fig=fig)
+                plt.pause(0.01)
+            else:
+                await asyncio.sleep(.2)
 
     async def all_loops(self):
         """
@@ -277,7 +303,7 @@ class AsyncScanManager:
             self.reduction_loop(),
             self.fetch_data_loop(),
             self.gp_loop(),
-
+            self.plotting_loop(),
         )
         self.logger.info('All loops finished.')
         self.remote.END()
@@ -309,14 +335,14 @@ if __name__ == '__main__':
     print('Running asyncscanner...')
     import os
     # an unsafe, unsupported, undocumented workaround :
-    # os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
+    os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 
     import argparse
     parser = argparse.ArgumentParser(description='AsyncScanManager')
     parser.add_argument('--host', type=str, default='localhost', help='SGM4 host')
     parser.add_argument('--port', type=int, default=54333, help='SGM4 port')
     parser.add_argument('--loglevel', type=str, default='DEBUG', help='Log level')
-    # parser.add_argument('--logdir', type=str, default='logs', help='Log directory')
+    parser.add_argument('--logdir', type=str, default='logs', help='Log directory')
     parser.add_argument('--duration', type=int, default=None, help='Duration of the scan in seconds')
     parser.add_argument('--train_at', type=int, nargs='+', default=[10,20,30,40,50,60,70,80,90,100,200,400,800], help='Train GP at these number of samples')
     args = parser.parse_args()
@@ -345,6 +371,7 @@ if __name__ == '__main__':
         logger=logger,
         train_at=args.train_at,
         duration = args.duration,
+        use_cost_function = True,
     )
 
     # start scan manager

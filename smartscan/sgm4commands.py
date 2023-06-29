@@ -64,7 +64,7 @@ class SGM4Commands:
     def step_size(self) -> List[float]:
         """ step size of the scan """
         if self._step_size is None:
-            self._step_size = self.STEP_SIZE()
+            self._step_size = [np.abs(st) for st in  self.STEP_SIZE()]
         return self._step_size
 
     @property
@@ -82,7 +82,9 @@ class SGM4Commands:
         if self._axes is None:
             self._axes = []
             for (start,stop), step in zip(self.limits, self.step_size):
-                self._axes.append(np.arange(start, stop, step))
+                if stop < start:
+                    start, stop = stop, start
+                self._axes.append(np.arange(start, stop, step))         
         return self._axes
     
     def send_command(self, command, *args) -> None:
@@ -105,6 +107,7 @@ class SGM4Commands:
             checksum=self.checksum,
             verbose=self.verbose,
             timeout=self.timeout,
+
             buffer_size=self.buffer_size,
             CLRF=True,
         )
@@ -136,7 +139,8 @@ class SGM4Commands:
             pass
         self._filename = Path(self.FILENAME())
         if self._filename.is_file():
-            self.parse_file()
+            print(f'file {self._filename} found! good to go!')
+            # self.parse_file()
         else:
             Warning(f"Expected {self._filename} to be a file")        
 

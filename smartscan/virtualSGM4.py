@@ -2,14 +2,15 @@ from typing import List,Tuple,Sequence,Union
 import time
 import asyncio
 from pathlib import Path
+import logging
 
 import xarray as xr
 # import dataloader as dl
 import h5py
 import numpy as np
 
-from .TCP import TCPServer
-from .file import SGM4FileManager
+from smartscan.TCP import TCPServer
+from smartscan.file import SGM4FileManager
 
 
 class VirtualSGM4(TCPServer):
@@ -27,8 +28,11 @@ class VirtualSGM4(TCPServer):
             verbose: bool = True,
             buffer_size:int = 1024*1024*8,
             dwell_time: float = 1,
+            logger=None,
     ) -> None:
         super().__init__(ip, port)
+        self.logger = logger or logging.getLogger(__name__)
+        self.logger.info('init VirtualSGM4 object')
         self.queue = []
         self.status = 'IDLE' # TODO: implement status
         if source_file is not None:
@@ -175,7 +179,7 @@ class VirtualSGM4(TCPServer):
             raise FileExistsError(f'File {self.target_file_name} already exists.')
         else:
             self.target_file_name.parent.mkdir(parents=True, exist_ok=True)
-        self.log(f'Creating file {self.target_file_name}')
+        self.logger.info(f'Creating file {self.target_file_name}')
         self.file = h5py.File(self.target_file_name, mode=mode, libver='latest')
         
         self.file.create_dataset(
@@ -213,7 +217,7 @@ class VirtualSGM4(TCPServer):
     def measure(self, changed:Sequence[bool]) -> float:
         """ Fake measuring the current position."""
 
-        self.log(f'Measuring position {self.current_pos}, changed {changed}')
+        self.logger.debug(f'Measuring position {self.current_pos}, changed {changed}')
         pos, data = self.read_data(self.current_pos)
         data_ds = self.file["Entry/Data/TransformedData"]
         data_ds.resize((data_ds.shape[0] + 1),axis=0)
@@ -238,7 +242,7 @@ class VirtualSGM4(TCPServer):
         t0 = time.time()
         for i in range(self.ndim):
             await self.move_axis(i, position[i])
-        self.log('moving from {} to {} took {:.3f} seconds'.format(old_pos, position, time.time()-t0))
+        self.logging.debug('moving from {} to {} took {:.3f} seconds'.format(old_pos, position, time.time()-t0))
 
     async def move_axis(self, axis: int, target: float) -> None:
         """ Move the specified axis to the specified target position.
@@ -249,7 +253,7 @@ class VirtualSGM4(TCPServer):
         """
         assert axis in range(self.ndim), f'Invalid axis {axis}'
         if not self.position_is_allowed(axis, target):
-            self.log(f'Invalid target {target} for axis {axis}')
+            self.logger.warning(f'Invalid target {target} for axis {axis}')
         delay = max(0.05,abs(target - self.current_pos[axis]) / self.MOTOR_SPEED)
         await asyncio.sleep(delay)
         self.current_pos[axis] = target
@@ -263,22 +267,22 @@ class VirtualSGM4(TCPServer):
         Once the queue is empty, if self.wait_at_queue_empty is False, the loop stops.
         Otherwise, it waits for new points to be added to the queue.
         """
-        self.log('Starting scan...')
+        self.logger.info('Starting scan...')
         self.wait_at_queue_empty = True
         self.current_pos = [np.mean(l) for l in self.limits]
         while True:
             if len(self.queue) == 0:
                 if not self.wait_at_queue_empty:
-                    self.log('queue is empty, stopping scan')
+                    self.logger.info('queue is empty, stopping scan')
                     break
-                self.log('queue is empty, waiting is {}...'.format(self.wait_at_queue_empty), end='\r')
+                # self.log('queue is empty, waiting is {}...'.format(self.wait_at_queue_empty), end='\r')
                 # await asyncio.sleep(self.dwell_time)
                 changed = [False] * self.ndim
             else:
                 next_pos = self.queue.pop(0)
                 # manhattan distance:
                 distance = sum([abs(next_pos[i] - self.current_pos[i]) for i in range(self.ndim)])
-                self.log(f'Moving to {next_pos}. takes {distance/self.MOTOR_SPEED:.2f} seconds')
+                self.logger.debug(f'Moving to {next_pos}. takes {distance/self.MOTOR_SPEED:.2f} seconds')
                 delay = max(0.05, distance / self.MOTOR_SPEED)
                 await asyncio.sleep(delay)
                 changed = [new != old for new, old in zip(next_pos, self.current_pos)]
@@ -287,7 +291,7 @@ class VirtualSGM4(TCPServer):
             _ = self.measure(changed)
             await asyncio.sleep(self.dwell_time)
 
-        self.log('Scan finished')
+        self.logger.info('Scan finished')
         self.source_file.close()
 
     def parse_message(self, message: str) -> str:
@@ -328,6 +332,7 @@ class VirtualSGM4(TCPServer):
             attr = getattr(self, msg[0])
             if len(msg) > 1:
                 answer = attr(*msg[1:])
+
             else:
                 answer = attr()
         # except AttributeError:
@@ -336,7 +341,9 @@ class VirtualSGM4(TCPServer):
             answer = f'ERROR {type(e).__name__} {e}'
             raise e
         finally:
-            self.log(f'Sending answer "{answer}"')
+            truncated_message = message[:50] + '...' if len(message) > 50 else message
+            truncated_answer = answer[:50] + '...' if len(answer) > 50 else answer
+            self.logger.info(f'Received message "{truncated_message}", answer "{truncated_answer}"')
             return answer
 
     def ADD_POINT(self, *args) -> str:
@@ -397,6 +404,7 @@ class VirtualSGM4(TCPServer):
         pos_str =  ' '.join([str(v) for v in self.current_pos])
         data_str = ' '.join([str(np.round(v,4).astype(np.float32)) for v in np.random.rand(640,400).ravel()])
         time.sleep(np.random.rand(1)[0])
+        print()
         return f'MEASURE {len(self.current_pos)} {pos_str} {data_str}'
 
     def __del__(self) -> None:
@@ -449,7 +457,7 @@ class FileSGM4(SGM4FileManager, VirtualSGM4):
         """
         assert len(position) == self.ndim, f'Invalid number of attributes {len(position)}'
         value = self.xdata.sel({self.dims[i]: position[i] for i in range(self.ndim)}).values
-        self.log(f'Waiting for {self.dwell_time} seconds')
+        self.logger.info(f'Waiting for {self.dwell_time} seconds')
         await asyncio.sleep(self.dwell_time)
         self.measured.loc[{self.dims[i]: position[i] for i in range(self.ndim)}] = value
         return value
@@ -457,25 +465,53 @@ class FileSGM4(SGM4FileManager, VirtualSGM4):
 
 if __name__ == '__main__':
 
-    
+    # source_file = r"D:\data\SGM4 - 2022 - CrSBr\data\Kiss05_15_1.h5"
+    source_file =  Path(r"D:\data\SGM4\SmartScan\Z006_46.h5")
+    source_file =  Path(r"D:\data\SGM4\SmartScan\Z006_35_0.h5")
+
+    name = Path(source_file).stem
+
+        # init logger
+    logger = logging.getLogger('virtualSGM4')
+    logger.setLevel('DEBUG')
+    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s | %(message)s')
+    sh = logging.StreamHandler()
+    sh.setLevel('DEBUG')
+    sh.setFormatter(formatter)
+    logger.addHandler(sh)
+
+    # fh = logging.FileHandler(os.path.join(args.logdir, args.logfile))
+    # fh.setLevel(args.loglevel)
+    # fh.setFormatter(formatter)
+    # logger.addHandler(fh)
+    logger.info('Intialized Logger')
+    # init scan manager
+
     vm = VirtualSGM4(
         'localhost', 
-        12345, 
-        ndim = 2, 
-        limits=[-10000,10000,-10000,10000], 
-        verbose=True
+        54333, 
+        verbose=True,
+        logger=logger,
     )
-    t0 = time.time()
-    lin_pts = [
-        (0,0),
-        # (100,0),(200,0),(300,0),(400,0),(500,0),
-        # (0,100),(100,100),(200,100),(300,100),(400,100),(500,100),
-        # (0,200),(100,200),(200,200),(300,200),(400,200),(500,200),
-        # (0,300),(100,300),(200,300),(300,300),(400,300),(500,300),
-    ]
+    vm.init_scan_from_file(filename=source_file)
+    filedir = Path(
+        r"C:\Users\stein\OneDrive\Documents\_Work\_code\ARPES-ASTRID\smartscan\data"
+        )
+    i=0
+    while True:
+        filename = filedir / f'{name}_virtual_{i:03.0f}.h5'
+        if not filename.exists():
+            break
+        else:
+            i += 1
+    
+    vm.create_file(
+        mode='x',
+        filename=filename
+    )
 
-    vm.queue=lin_pts
-    vm.wait_at_queue_empty = True
+    vm.current_pos = np.mean(vm.limits[:2]), np.mean(vm.limits[2:])
+    print('set current pos to', vm.current_pos)
 
     vm.run()
-    # print('All done. Quitting...')
+    print('All done. Quitting...')

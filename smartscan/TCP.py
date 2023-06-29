@@ -119,7 +119,9 @@ class TCPServer:
         Args:
             message (str): The message to print.
         """
-        if self.verbose:
+        if self.logger is not None:
+            self.logger.info(message)
+        elif self.verbose:
             print(message,end=end)
 
     async def handle_client(self, reader: StreamReader, writer: StreamWriter):

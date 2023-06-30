@@ -71,6 +71,7 @@ class AsyncScanManager:
             port:int = 54333,
             buffer_size:int =  1024*1024*8,
             train_at: Sequence[int]= [20,40,80,160,320,640,1280,2560,5120,10240],
+            train_every: int = 0,
             duration: float=None,
             max_iterations: int=1000,
             use_cost_function:bool = True,
@@ -94,6 +95,7 @@ class AsyncScanManager:
         self.positions = []
         self.values = []
         self.train_at = train_at
+        self.train_every = train_every
         self.use_cost_function = use_cost_function
         self.replot = False
 
@@ -258,9 +260,15 @@ class AsyncScanManager:
                         )
                 else:
                     self.logger.info('gp looping...')
-                    if len(self.positions) in self.train_at:
+                    retrain = False
+                    if iter_counter in self.train_at:
+                        retrain = True
+                    elif self.train_every>0 and iter_counter % train_every == 0:
+                        retrain = True
+                    # f len(self.positions) in self.train_at:
+                    if retrain:
                         print('############################################################\n\n\n')
-                        self.logger.info(f'Training GP with {len(self.positions)} samples.')
+                        self.logger.info(f'Training GP at iteration {iter_counter}, with {len(self.positions)} samples.')
                         print('\n\n\n############################################################')
                         self.gp.train_gp(**train_pars)
                     answer = self.gp.ask(**ask_pars, acquisition_function=ndim_aqfunc)
@@ -373,6 +381,7 @@ if __name__ == '__main__':
         port=args.port,
         logger=logger,
         train_at=args.train_at,
+        train_every=10,
         duration = args.duration,
         use_cost_function = True,
     )

@@ -8,7 +8,7 @@ from smartscan.TCP import send_tcp_message
 from smartscan.gp import fvGPOptimizer, ndim_aqfunc, compute_costs,plot_acqui_f
 from smartscan.sgm4commands import SGM4Commands
 from smartscan.utils import closest_point_on_grid
-from smartscan.reductions import compose, sharpness, mean_std
+from smartscan.reductions import compose, sharpness, mean_std, select_roi
 import matplotlib.pyplot as plt 
 
 optimizer_pars = {
@@ -101,6 +101,7 @@ class AsyncScanManager:
         self.use_cost_function = use_cost_function
         self.replot = False
         self.batch_normalize = batch_normalize
+        self.last_spectrum = None
 
         if logger is not None:
 
@@ -188,13 +189,7 @@ class AsyncScanManager:
                     n_new += 1
                 except asyncio.QueueEmpty:
                     break
-            if self.gp is not None:
-                pos = np.asarray(self.positions)
-                vals = np.asarray(self.values)
-                weights = np.asarray([100,1000])
-                if self.batch_normalize:
-                    vals = weights * vals / np.mean(vals)
-                self.gp.tell(pos,vals)
+            self.tell_gp()
             self.logger.info(f'Updated data with {n_new} new points. Total: {len(self.positions)} last Pos {self.positions[-1]} {self.values[-1]}.')
             return True
         else:
@@ -221,11 +216,17 @@ class AsyncScanManager:
             if self._raw_data_queue.qsize() > 0:
                 pos,data = await self._raw_data_queue.get()
                 self.logger.debug(f'reducing data with shape {data.shape}')
+                data = select_roi(
+                    data.reshape((640,400)),
+                    x_lim = (330,500),
+                    y_lim = (20,380),
+                )
+                self.last_spectrum = data.copy()
                 reduced = compose(
-                    data.reshape((640,400)), 
+                    data, 
                     np.mean, 
                     sharpness, 
-                    func_b_kwargs = {'sigma':3, 'r':1, 'reduce':np.mean}
+                    func_b_kwargs = {'sigma':5, 'r':1, 'reduce':np.mean}
                 )
                 # reduced = reduced * 1000
                 # self.logger.info(f'adding {(pos,reduced)} to processed queue')
@@ -257,7 +258,7 @@ class AsyncScanManager:
                         output_space_dimension = 1,
                         output_number = 2,  
                     )
-                    self.gp.tell(np.asarray(self.positions), np.asarray(self.values))
+                    self.tell_gp()
                     self.logger.info(f'Initialized GP with {len(self.positions)} samples.')
                     self.gp.init_fvgp(**fvgp_pars)
                     self.logger.info('Initialized GP. Training...')
@@ -282,8 +283,15 @@ class AsyncScanManager:
                     if retrain:
                         print('############################################################\n\n\n')
                         self.logger.info(f'Training GP at iteration {iter_counter}, with {len(self.positions)} samples.')
-                        print('\n\n\n############################################################')
+                        
+                        old_params = self.gp.hyperparameters.copy()
                         self.gp.train_gp(**train_pars)
+                        new_params =  self.gp.hyperparameters.copy()
+                        s = 'hyperparams: '
+                        for new,old in zip(new_params,old_params):
+                            s += f"{new:,.2f} ({(new-old)/old:.2%}) |"
+                        self.logger.debug(s)
+                        print('\n\n\n############################################################')
                     answer = self.gp.ask(**ask_pars, acquisition_function=ndim_aqfunc)
                     next_pos = answer['x']
                     try:
@@ -298,12 +306,25 @@ class AsyncScanManager:
                 await asyncio.sleep(.2)
     
         self.remote.END()
+    
+    def tell_gp(self):
+        if self.gp is not None:
+            pos = np.asarray(self.positions)
+            vals = np.asarray(self.values)
+            weights = np.asarray([100,10_000])
+            if self.batch_normalize:
+                vals = weights * vals / np.mean(vals)
+            self.gp.tell(pos,vals)
+
 
     async def plotting_loop(self):
         self.logger.info('starting plotting tool loop')
         fig = None
         aqf = None
+
+        iteration = 0
         while not self._should_stop:
+            iteration += 1
             if self.replot:
                 self.replot = False
                 fig, aqf = plot_acqui_f(
@@ -311,11 +332,14 @@ class AsyncScanManager:
                     fig=fig,
                     pos=np.asarray(self.positions),
                     val=np.asarray(self.values),
-                    old_aqf = aqf
+                    old_aqf = aqf,
+                    last_spectrum=self.last_spectrum,
                 )
                 plt.pause(0.01)
             else:
                 await asyncio.sleep(.2)
+            # if fig is not None and iteration %100 == 0:
+            #     fig.savefig(f'../results/{self.remote.filename.with_suffix("pdf").name}')
 
     async def all_loops(self):
         """

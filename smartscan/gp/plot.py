@@ -19,7 +19,15 @@ def plot_map_with_path_and_scatterplot(positions,values,reduced_maps):
     ax[0].scatter(positions[:,1],positions[:,0],s=10,c='b')
     ax[1].scatter(positions[:,1],positions[:,0],s=25,c=-values[:,0],cmap='viridis',marker='s')
 
-def plot_acqui_f(gp, fig, pos, val, shape=(50,50), old_aqf = None):
+def plot_acqui_f(
+        gp, 
+        fig, 
+        pos, 
+        val, 
+        shape=(50,50), 
+        old_aqf = None, 
+        last_spectrum = None,
+    ):
     """ Plot the acquisition function of a GP
     
     Args:
@@ -85,18 +93,19 @@ def plot_acqui_f(gp, fig, pos, val, shape=(50,50), old_aqf = None):
         fig.clear()
 
     ax = [
-        fig.add_subplot(241),
-        fig.add_subplot(242),
-        fig.add_subplot(243),
-        fig.add_subplot(244),
-        fig.add_subplot(245),
-        fig.add_subplot(246),
-        fig.add_subplot(247),
-        fig.add_subplot(248),
+        fig.add_subplot(331),
+        fig.add_subplot(332),
+        fig.add_subplot(333),
+        fig.add_subplot(334),
+        fig.add_subplot(335),
+        fig.add_subplot(336),
+        fig.add_subplot(337),
+        fig.add_subplot(338),
+        fig.add_subplot(339),
     ]
 
     # fig,ax = plt.subplots(2,2,)
-    ax = np.asarray(ax).reshape(2,4)
+    ax = np.asarray(ax).reshape(3,3)
     for i, PM, PV in zip(range(2),[PM0,PM1], [sPV0,sPV1]):
         PM = np.rot90(PM,k=-1)[:,::-1]
         PV = np.rot90(PV,k=-1)[:,::-1]
@@ -121,8 +130,8 @@ def plot_acqui_f(gp, fig, pos, val, shape=(50,50), old_aqf = None):
     ax[0,2].scatter(pos[-1,0],pos[-1,1],s = 25, c='r', marker='o')
     ax[1,2].scatter(pos[-1,0],pos[-1,1],s = 25, c='r', marker='o')
 
-    ax[0,3].set_title(f'Aq func {aqf.max():.2f}')
-    ax[0,3].imshow(
+    ax[2,0].set_title(f'Aq func {aqf.max():.2f}')
+    ax[2,0].imshow(
         aqf,
         extent=[*lim_x,*lim_y], 
         origin='lower',
@@ -130,12 +139,15 @@ def plot_acqui_f(gp, fig, pos, val, shape=(50,50), old_aqf = None):
     )
     if old_aqf is not None:
         diff = old_aqf - aqf
-        ax[1,3].imshow(
+        ax[2,1].set_title('aqf changes')
+        ax[2,1].imshow(
             diff,
             extent=[*lim_x,*lim_y], 
             origin='lower',
             cmap='bwr'
         ) 
+    if last_spectrum is not None:
+        ax[2,2].imshow(last_spectrum, clim=np.quantile(last_spectrum,(0.02,0.98)), origin='lower', cmap='terrain')
     # ax[i,0].figure.canvas.draw()
     # ax[i,1].figure.canvas.draw()
 

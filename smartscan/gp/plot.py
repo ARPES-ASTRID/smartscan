@@ -65,8 +65,8 @@ def plot_acqui_f(gp, fig, pos, val, shape=(50,50)):
     PM1 = np.reshape(gp.posterior_mean(x_pred_1)["f(x)"],shape)
     PV1 = np.reshape(gp.posterior_covariance(x_pred_1)["v(x)"],shape)
     sPV1 = np.sqrt(PV1)
-    a = 3.5
-    norm = 1.0
+    a = 2.5
+    norm = 2.0
 
     aqf = a * np.sqrt(PV0+PV1) + norm * (PM0 + PM1)
 
@@ -115,8 +115,8 @@ def plot_acqui_f(gp, fig, pos, val, shape=(50,50)):
         ax[i,1].scatter(positions[-1,0],positions[-1,1], s=30,c='white')
 
 
-    ax[0,2].scatter(pos[:,1],pos[:,0],s = 25, c=val[:,0],cmap='viridis', marker='o',aspect='equal')
-    ax[1,2].scatter(pos[:,1],pos[:,0],s = 25, c=val[:,1],cmap='viridis', marker='o',aspect='equal')
+    ax[0,2].scatter(pos[:,1],pos[:,0],s = 25, c=val[:,0],cmap='viridis', marker='o')
+    ax[1,2].scatter(pos[:,1],pos[:,0],s = 25, c=val[:,1],cmap='viridis', marker='o')
 
     ax[0,3].set_title(f'Aq func {aqf.max():.2f}')
     ax[0,3].imshow(

@@ -263,7 +263,7 @@ class AsyncScanManager:
                     retrain = False
                     if iter_counter in self.train_at:
                         retrain = True
-                    elif self.train_every>0 and iter_counter % train_every == 0:
+                    elif self.train_every > 0 and iter_counter % self.train_every == 0:
                         retrain = True
                     # f len(self.positions) in self.train_at:
                     if retrain:

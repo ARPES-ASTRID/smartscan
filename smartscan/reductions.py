@@ -44,3 +44,25 @@ def sharpness(
     dydx,ddy = np.gradient(dy)
     ddxddy = np.sqrt(ddx**2 + r*ddy**2)
     return reduce(ddxddy)
+
+def select_roi(
+        data: np.ndarray,
+        x_lim: Tuple[int,int] = None,
+        y_lim: Tuple[int,int] = None,
+    ) -> np.ndarray:
+    """Select a region of interest from a 2D array
+
+    Args:
+        data (np.ndarray): 2D array
+        x_lim (Tuple[int,int]): x limits of the ROI. Defaults to None.
+        y_lim (Tuple[int,int]): y limits of the ROI. Defaults to None.
+
+    Returns:
+        np.ndarray: ROI
+    """
+    if x_lim is None:
+        x_lim = (0,data.shape[0])
+    if y_lim is None:
+        y_lim = (0,data.shape[1])
+    return data[x_lim[0]:x_lim[1],y_lim[0]:y_lim[1]]
+

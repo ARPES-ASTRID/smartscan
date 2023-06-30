@@ -39,7 +39,7 @@ def sharpness(
         r: float = 1., 
         reduce: callable = np.mean
     ) -> float:
-    dx,dy = gaussian_filter(np.gradient(data),sigma=sigma)
+    dx,dy = np.gradient(gaussian_filter(data,sigma=sigma))
     ddx,dxdy = np.gradient(dx)
     dydx,ddy = np.gradient(dy)
     ddxddy = np.sqrt(ddx**2 + r*ddy**2)

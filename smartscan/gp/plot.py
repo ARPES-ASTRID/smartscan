@@ -19,7 +19,7 @@ def plot_map_with_path_and_scatterplot(positions,values,reduced_maps):
     ax[0].scatter(positions[:,1],positions[:,0],s=10,c='b')
     ax[1].scatter(positions[:,1],positions[:,0],s=25,c=-values[:,0],cmap='viridis',marker='s')
 
-def plot_acqui_f(gp, fig, pos, val, shape=(50,50)):
+def plot_acqui_f(gp, fig, pos, val, shape=(50,50), old_aqf = None):
     """ Plot the acquisition function of a GP
     
     Args:
@@ -65,10 +65,12 @@ def plot_acqui_f(gp, fig, pos, val, shape=(50,50)):
     PM1 = np.reshape(gp.posterior_mean(x_pred_1)["f(x)"],shape)
     PV1 = np.reshape(gp.posterior_covariance(x_pred_1)["v(x)"],shape)
     sPV1 = np.sqrt(PV1)
-    a = 2.5
+    
+    a = 1.0
     norm = 2.0
 
     aqf = a * np.sqrt(PV0+PV1) + norm * (PM0 + PM1)
+    aqf = np.rot90(aqf,k=-1)[:,::-1]
 
     # fig,ax=plt.subplots(3,1,figsize=(8,6))
     # ax[0].imshow(PV)
@@ -95,7 +97,6 @@ def plot_acqui_f(gp, fig, pos, val, shape=(50,50)):
 
     # fig,ax = plt.subplots(2,2,)
     ax = np.asarray(ax).reshape(2,4)
-
     for i, PM, PV in zip(range(2),[PM0,PM1], [sPV0,sPV1]):
         PM = np.rot90(PM,k=-1)[:,::-1]
         PV = np.rot90(PV,k=-1)[:,::-1]
@@ -115,19 +116,29 @@ def plot_acqui_f(gp, fig, pos, val, shape=(50,50)):
         ax[i,1].scatter(positions[-1,0],positions[-1,1], s=30,c='white')
 
 
-    ax[0,2].scatter(pos[:,1],pos[:,0],s = 25, c=val[:,0],cmap='viridis', marker='o')
-    ax[1,2].scatter(pos[:,1],pos[:,0],s = 25, c=val[:,1],cmap='viridis', marker='o')
+    ax[0,2].scatter(pos[:,0],pos[:,1],s = 25, c=val[:,0],cmap='viridis', marker='o')
+    ax[1,2].scatter(pos[:,0],pos[:,1],s = 25, c=val[:,1],cmap='viridis', marker='o')
+    ax[0,2].scatter(pos[-1,0],pos[-1,1],s = 25, c='r', marker='o')
+    ax[1,2].scatter(pos[-1,0],pos[-1,1],s = 25, c='r', marker='o')
 
     ax[0,3].set_title(f'Aq func {aqf.max():.2f}')
     ax[0,3].imshow(
-        np.rot90(aqf,k=-1)[:,::-1],
+        aqf,
         extent=[*lim_x,*lim_y], 
         origin='lower',
         clim=np.quantile(aqf,(0.01,0.99))
     )
+    if old_aqf is not None:
+        diff = old_aqf - aqf
+        ax[1,3].imshow(
+            diff,
+            extent=[*lim_x,*lim_y], 
+            origin='lower',
+            cmap='bwr'
+        ) 
     # ax[i,0].figure.canvas.draw()
     # ax[i,1].figure.canvas.draw()
 
     plt.pause(0.01)
-    return fig
+    return fig, aqf
     

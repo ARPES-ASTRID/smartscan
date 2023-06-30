@@ -76,6 +76,7 @@ class AsyncScanManager:
             duration: float=None,
             max_iterations: int=1000,
             use_cost_function:bool = True,
+            batch_normalize:bool = True,
             logger=None
         ) -> None:
         self.host = host
@@ -99,6 +100,7 @@ class AsyncScanManager:
         self.train_every = train_every
         self.use_cost_function = use_cost_function
         self.replot = False
+        self.batch_normalize = batch_normalize
 
         if logger is not None:
 
@@ -189,8 +191,9 @@ class AsyncScanManager:
             if self.gp is not None:
                 pos = np.asarray(self.positions)
                 vals = np.asarray(self.values)
+                weights = np.asarray([100,1000])
                 if self.batch_normalize:
-                    vals = vals / np.mean(vals)
+                    vals = weights * vals / np.mean(vals)
                 self.gp.tell(pos,vals)
             self.logger.info(f'Updated data with {n_new} new points. Total: {len(self.positions)} last Pos {self.positions[-1]} {self.values[-1]}.')
             return True
@@ -217,9 +220,9 @@ class AsyncScanManager:
             self.logger.info('reduction looping...')
             if self._raw_data_queue.qsize() > 0:
                 pos,data = await self._raw_data_queue.get()
-                
+                self.logger.debug(f'reducing data with shape {data.shape}')
                 reduced = compose(
-                    data, 
+                    data.reshape((640,400)), 
                     np.mean, 
                     sharpness, 
                     func_b_kwargs = {'sigma':3, 'r':1, 'reduce':np.mean}
@@ -299,14 +302,16 @@ class AsyncScanManager:
     async def plotting_loop(self):
         self.logger.info('starting plotting tool loop')
         fig = None
+        aqf = None
         while not self._should_stop:
             if self.replot:
                 self.replot = False
-                fig = plot_acqui_f(
+                fig, aqf = plot_acqui_f(
                     gp=self.gp,
                     fig=fig,
                     pos=np.asarray(self.positions),
                     val=np.asarray(self.values),
+                    old_aqf = aqf
                 )
                 plt.pause(0.01)
             else:
@@ -394,6 +399,7 @@ if __name__ == '__main__':
         train_every=10,
         duration = args.duration,
         use_cost_function = True,
+        batch_normalize = True,
     )
 
     # start scan manager

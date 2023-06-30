@@ -19,7 +19,7 @@ def plot_map_with_path_and_scatterplot(positions,values,reduced_maps):
     ax[0].scatter(positions[:,1],positions[:,0],s=10,c='b')
     ax[1].scatter(positions[:,1],positions[:,0],s=25,c=-values[:,0],cmap='viridis',marker='s')
 
-def plot_acqui_f(gp, fig, shape=(50,50),feature=0):
+def plot_acqui_f(gp, fig, pos, val, shape=(50,50)):
     """ Plot the acquisition function of a GP
     
     Args:
@@ -28,6 +28,8 @@ def plot_acqui_f(gp, fig, shape=(50,50),feature=0):
     Returns:
         None
     """
+
+    positions, values = gp.x_data, gp.y_data
 
 
     x_pred_0 = np.empty((np.prod(shape),3))
@@ -58,10 +60,15 @@ def plot_acqui_f(gp, fig, shape=(50,50),feature=0):
             counter += 1
 
     PM0 = np.reshape(gp.posterior_mean(x_pred_0)["f(x)"],shape)
-    PV0 = np.sqrt(np.reshape(gp.posterior_covariance(x_pred_0)["v(x)"],shape))
+    PV0 = np.reshape(gp.posterior_covariance(x_pred_0)["v(x)"],shape)
+    sPV0 = np.sqrt(PV0)
     PM1 = np.reshape(gp.posterior_mean(x_pred_1)["f(x)"],shape)
-    PV1 = np.sqrt(np.reshape(gp.posterior_covariance(x_pred_1)["v(x)"],shape))
+    PV1 = np.reshape(gp.posterior_covariance(x_pred_1)["v(x)"],shape)
+    sPV1 = np.sqrt(PV1)
+    a = 3.5
+    norm = 1.0
 
+    aqf = a * np.sqrt(PV0+PV1) + norm * (PM0 + PM1)
 
     # fig,ax=plt.subplots(3,1,figsize=(8,6))
     # ax[0].imshow(PV)
@@ -70,16 +77,24 @@ def plot_acqui_f(gp, fig, shape=(50,50),feature=0):
     # for aa in ax:
     #     aa.scatter(points[:-1,1],points[:-1,0],s=1,color='orange')
     #     aa.scatter(points[-1,1],points[-1,0],s=2,color='red')
-        
+    if fig is None:
+        fig = plt.figure('ACQ func',figsize=(12,8), layout='constrained')
+    else:
+        fig.clear()
+
     ax = [
-        fig.add_subplot(221),
-        fig.add_subplot(222),
-        fig.add_subplot(223),
-        fig.add_subplot(224),
+        fig.add_subplot(241),
+        fig.add_subplot(242),
+        fig.add_subplot(243),
+        fig.add_subplot(244),
+        fig.add_subplot(245),
+        fig.add_subplot(246),
+        fig.add_subplot(247),
+        fig.add_subplot(248),
     ]
 
     # fig,ax = plt.subplots(2,2,)
-    ax = np.asarray(ax).reshape(2,2)
+    ax = np.asarray(ax).reshape(2,4)
 
     for i, PM, PV in zip(range(2),[PM0,PM1], [PV0,PV1]):
         PM = np.rot90(PM,k=-1)[:,::-1]
@@ -94,14 +109,20 @@ def plot_acqui_f(gp, fig, shape=(50,50),feature=0):
         ax[i,1].imshow(PV, clim=[0,1], extent=[*lim_x,*lim_y], origin='lower')
         ax[i,1].set_title(f'PV: {pvmax:.3f}')
 
-        positions = gp.x_data
         ax[i,0].scatter(positions[:,0],positions[:,1], s=20,c='r')
         ax[i,1].scatter(positions[:,0],positions[:,1], s=20,c='r')
         ax[i,0].scatter(positions[-1,0],positions[-1,1], s=30,c='white')
         ax[i,1].scatter(positions[-1,0],positions[-1,1], s=30,c='white')
 
-    
-        # ax[i,0].figure.canvas.draw()
-        # ax[i,1].figure.canvas.draw()
+
+    ax[0,2].scatter(pos[:,1],pos[:,0],s = 25, c=val[:,0],cmap='viridis', marker='o',aspect='equal')
+    ax[1,2].scatter(pos[:,1],pos[:,0],s = 25, c=val[:,1],cmap='viridis', marker='o',aspect='equal')
+
+    ax[0,3].set_title(f'Aq func {aqf.max():.2f}')
+    ax[0,3].imshow(np.rot90(aqf,k=-1)[:,::-1],extent=[*lim_x,*lim_y], origin='lower' clim=np.quantile(aqf,(0.01,0.99)))
+    # ax[i,0].figure.canvas.draw()
+    # ax[i,1].figure.canvas.draw()
+
     plt.pause(0.01)
+    return fig
     

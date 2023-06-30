@@ -2,7 +2,7 @@ import numpy as np
 
 def ndim_aqfunc(x, gp):
     """Compute the acquisition function for a given GP and a given point"""
-    a = 2.0  #####change here, 3.0 for 95 percent confidence interval
+    a = 3.5  #####change here, 3.0 for 95 percent confidence interval
     norm = 1.0
     ret = None
     for i in range(gp.input_dim-1):

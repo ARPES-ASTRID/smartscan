@@ -47,8 +47,8 @@ ask_pars = {
 }
 cost_func_params = {
     'speed':300,
-    'dwell_time':0.5,
-    'dead_time':0.1,
+    'dwell_time':1,
+    'dead_time':0.6,
     # 'point_to_um':15,
     'weight':.1,
     'min_distance':.99
@@ -280,13 +280,16 @@ class AsyncScanManager:
 
     async def plotting_loop(self):
         self.logger.info('starting plotting tool loop')
-        fig = plt.figure('ACQ func',figsize=(10,8), layout='constrained')
-
+        fig = None
         while not self._should_stop:
             if self.replot:
                 self.replot = False
-                fig.clear()
-                plot_acqui_f(gp=self.gp,fig=fig)
+                fig = plot_acqui_f(
+                    gp=self.gp,
+                    fig=fig,
+                    pos=np.asarray(self.positions),
+                    val=np.asarray(self.values),
+                )
                 plt.pause(0.01)
             else:
                 await asyncio.sleep(.2)

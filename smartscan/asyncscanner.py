@@ -8,6 +8,7 @@ from smartscan.TCP import send_tcp_message
 from smartscan.gp import fvGPOptimizer, ndim_aqfunc, compute_costs,plot_acqui_f
 from smartscan.sgm4commands import SGM4Commands
 from smartscan.utils import closest_point_on_grid
+from smartscan.reductions import compose, sharpness, mean_std
 import matplotlib.pyplot as plt 
 
 optimizer_pars = {
@@ -186,7 +187,11 @@ class AsyncScanManager:
                 except asyncio.QueueEmpty:
                     break
             if self.gp is not None:
-                self.gp.tell(np.asarray(self.positions), np.asarray(self.values))
+                pos = np.asarray(self.positions)
+                vals = np.asarray(self.values)
+                if self.batch_normalize:
+                    vals = vals / np.mean(vals)
+                self.gp.tell(pos,vals)
             self.logger.info(f'Updated data with {n_new} new points. Total: {len(self.positions)} last Pos {self.positions[-1]} {self.values[-1]}.')
             return True
         else:
@@ -213,8 +218,13 @@ class AsyncScanManager:
             if self._raw_data_queue.qsize() > 0:
                 pos,data = await self._raw_data_queue.get()
                 
-                reduced = np.asarray([data.mean(), data.std()])
-                reduced = reduced * 1000
+                reduced = compose(
+                    data, 
+                    np.mean, 
+                    sharpness, 
+                    func_b_kwargs = {'sigma':3, 'r':1, 'reduce':np.mean}
+                )
+                # reduced = reduced * 1000
                 # self.logger.info(f'adding {(pos,reduced)} to processed queue')
                 self._reduced_data_queue.put_nowait((pos,reduced))
                 self.logger.info(f'added {(pos,reduced)} to processed queue, currently {self._reduced_data_queue.qsize()}')

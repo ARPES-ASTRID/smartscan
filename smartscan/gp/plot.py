@@ -96,7 +96,7 @@ def plot_acqui_f(gp, fig, pos, val, shape=(50,50)):
     # fig,ax = plt.subplots(2,2,)
     ax = np.asarray(ax).reshape(2,4)
 
-    for i, PM, PV in zip(range(2),[PM0,PM1], [PV0,PV1]):
+    for i, PM, PV in zip(range(2),[PM0,PM1], [sPV0,sPV1]):
         PM = np.rot90(PM,k=-1)[:,::-1]
         PV = np.rot90(PV,k=-1)[:,::-1]
         pmmax = PM.max()
@@ -119,7 +119,12 @@ def plot_acqui_f(gp, fig, pos, val, shape=(50,50)):
     ax[1,2].scatter(pos[:,1],pos[:,0],s = 25, c=val[:,1],cmap='viridis', marker='o',aspect='equal')
 
     ax[0,3].set_title(f'Aq func {aqf.max():.2f}')
-    ax[0,3].imshow(np.rot90(aqf,k=-1)[:,::-1],extent=[*lim_x,*lim_y], origin='lower' clim=np.quantile(aqf,(0.01,0.99)))
+    ax[0,3].imshow(
+        np.rot90(aqf,k=-1)[:,::-1],
+        extent=[*lim_x,*lim_y], 
+        origin='lower',
+        clim=np.quantile(aqf,(0.01,0.99))
+    )
     # ax[i,0].figure.canvas.draw()
     # ax[i,1].figure.canvas.draw()
 

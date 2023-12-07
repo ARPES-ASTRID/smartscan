@@ -62,7 +62,7 @@ def movement_cost(
     if len(cost_func_params) > 0:
         raise ValueError(f"Unrecognized parameters: {cost_func_params.keys()}")
     distance = manhattan_distance(origin,x) * point_to_um
-    time = weight * distance / speed  + dwell_time + dead_time
+    time: float = weight * distance / speed  + dwell_time + dead_time
     if verbose:
         logger.debug(f"Distance: {distance:.2f} um, Time: {time:.2f} s"
             f" (dwell: {dwell_time:.2f} s, dead: {dead_time:.2f} s)" 
@@ -76,12 +76,26 @@ def compute_costs(
         cost_func_params: dict = None, 
         verbose=False,
         logger=None,
-    ) -> float:
+    ) -> np.ndarray[float]:
+    """ Compute the cost of moving from origin to each point in x
+    
+    Args:
+        origin (tuple): starting position
+        x (tuple): list of N ending positions
+        cost_func_params (dict): dictionary of parameters for the cost function
+            - speed (float): speed of the scanner, expressed in mm/s
+            - dwell_time (float): dwell time, expressed in s
+            - dead_time (float): dead time, expressed in s
+            - point_to_um (float): conversion factor from mm to seconds#
+    
+    Returns:
+        Sequence[float]: cost of moving from origin to each point in x, expressed in seconds
+    """
     if logger is None:
         logger = logging.getLogger('compute_costs')
     cost = []
     for xx in x:
-        movcost = cost_func(origin,xx,cost_func_params,verbose=verbose,logger=logger)
+        movcost: float = cost_func(origin,xx,cost_func_params,verbose=verbose,logger=logger)
         cost.append(movcost)
     logger.debug(f"Costs computed: {cost}")
     return np.asarray(cost).T

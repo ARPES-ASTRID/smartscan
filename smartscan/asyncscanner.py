@@ -1,34 +1,39 @@
-from typing import Callable, Sequence, Tuple, Union, List
+from typing import Callable, Sequence, Tuple, Union, List, Any
+from numpy.typing import NDArray, ArrayLike
 from pathlib import Path
 from datetime import datetime
+import logging
+
 import json
 import asyncio
 import numpy as np
 from smartscan.TCP import send_tcp_message
-from smartscan.gp import fvGPOptimizer, ndim_aqfunc, compute_costs,plot_acqui_f
+from smartscan.gp import fvGPOptimizer, ndim_aqfunc, compute_costs, plot_acqui_f
 from smartscan.sgm4commands import SGM4Commands
 from smartscan.utils import closest_point_on_grid
 from smartscan.reductions import compose, sharpness, mean_std, select_roi
 import matplotlib.pyplot as plt 
 
-optimizer_pars = {
+PathLike: object = Union[str, Path]
+
+optimizer_pars: dict[str, int] = {
     'input_space_dimension': 2,
     'output_space_dimension': 1,
     'output_number': 2,
 }
-hyperparameter_bounds = np.array(
+hyperparameter_bounds: ArrayLike = np.array(
     [[0.001,1e9],[1,1000],[1,1000],[1,1000],[1,1000]]
 )
-init_hyperparameters = np.array(
+init_hyperparameters: ArrayLike = np.array(
         [4.71907062e+06, 4.07439017e+02, 3.59068120e+02, 4e2, 4e2]
 )
-train_pars = {
+train_pars: dict[str, Any] = {
     'hyperparameter_bounds': hyperparameter_bounds,
     'pop_size': 20,
     'tolerance': 1e-6,
     'max_iter': 2,
 }
-fvgp_pars = {
+fvgp_pars: dict[str, Any] = {
     'init_hyperparameters' : init_hyperparameters,
     'compute_device': 'cpu',
     'gp_kernel_function': None,
@@ -36,7 +41,7 @@ fvgp_pars = {
     'use_inv':False,
     'ram_economy': True,
 }
-ask_pars = {
+ask_pars: dict[str, Any] = {
     'n': 1, 
     'bounds': None,
     'method': 'global', 
@@ -46,7 +51,7 @@ ask_pars = {
     'x0': None, 
     'dask_client': None,
 }
-cost_func_params = {
+cost_func_params: dict[str, Any] = {
     'speed':300,
     'dwell_time':1,
     'dead_time':0.6,
@@ -57,33 +62,35 @@ cost_func_params = {
 
 
 class Logger:
-    def __init__(self):
-        self.info = print
-        self.debug = print
-        self.error = print
-        self.warning = print
-        self.critical = print
+    def __init__(self) -> None:
+        self.info: Callable = print
+        self.debug: Callable = print
+        self.error: Callable = print
+        self.warning: Callable = print
+        self.critical: Callable = print
+    
+LoggerLike: object = Union[Logger, logging.Logger]
 
 class AsyncScanManager:
 
     def __init__(
             self,
-            host:str = 'localhost', 
-            port:int = 54333,
-            buffer_size:int =  1024*1024*8,
+            host: str = 'localhost', 
+            port: int = 54333,
+            buffer_size: int =  1024*1024*8,
             train_at: Sequence[int]= [20,40,80,160,320,640,1280,2560,5120,10240],
             train_every: int = 0,
             duration: float=None,
             max_iterations: int=1000,
-            use_cost_function:bool = True,
-            batch_normalize:bool = True,
-            logger=None
+            use_cost_function: bool = True,
+            batch_normalize: bool = True,
+            logger: LoggerLike =None
         ) -> None:
-        self.host = host
-        self.port = port
-        self.buffer_size = buffer_size
-        self.duration = duration
-        self.max_iterations = max_iterations
+        self.host: str = host
+        self.port: int = port
+        self.buffer_size: int = buffer_size
+        self.duration: float = duration
+        self.max_iterations: int = max_iterations
         self.remote = SGM4Commands(host, port, buffer_size=buffer_size)
         self.remote.connect()
         if len(self.remote.axes[0]) == 0:
@@ -91,32 +98,32 @@ class AsyncScanManager:
         else:
             print(f' Axes is {self.remote.axes}')
 
-        self._raw_data_queue = asyncio.Queue()
-        self._reduced_data_queue = asyncio.Queue()
+        self._raw_data_queue: asyncio.Queue = asyncio.Queue()
+        self._reduced_data_queue: asyncio.Queue = asyncio.Queue()
         self.gp = None
-        self.positions = []
-        self.values = []
-        self.train_at = train_at
-        self.train_every = train_every
-        self.use_cost_function = use_cost_function
-        self.replot = False
-        self.batch_normalize = batch_normalize
+        self.positions: List = []
+        self.values: List = []
+        self.train_at: Sequence[int] = train_at
+        self.train_every: int = train_every
+        self.use_cost_function: bool = use_cost_function
+        self.replot: bool = False
+        self.batch_normalize: bool = batch_normalize
         self.last_spectrum = None
 
         if logger is not None:
 
-            self.logger = logger
+            self.logger: Logger = logger
             # self.logger = logging.getLogger(__name__)
             # self.logger.setLevel(logging.DEBUG)
         else:
             logger = Logger()
         self.logger.info('Initialized AsyncScanManager.')
 
-    def save_settings(self, filename:str='settings.json', folder:str='./') -> None:
+    def save_settings(self, filename: Path | str ='settings.json', folder: Path | str ='./') -> Path:
         # save to file
         folder = Path(folder) if folder is not None else Path.cwd()
         filename = Path(filename)
-        if folder/filename.exists():
+        if (folder/filename).exists():
             filename = Path(f'{filename.stem}_{datetime.now().strftime("%Y%m%d_%H%M%S")}{filename.suffix}')
         filepath = folder/filename
         all_dict = {
@@ -147,18 +154,18 @@ class AsyncScanManager:
         await self.tcp.send_message('MEASURE')
         return await self.tcp.receive_message()
 
-    async def fetch_data(self):
+    async def fetch_data(self) -> tuple[str, None] | tuple[NDArray[Any], NDArray[Any]] | None:
         # message = await self.async_fetch_data()
-        message = send_tcp_message(
+        message: str = send_tcp_message(
             host = self.host, 
             port = self.port,
             msg = 'MEASURE',
             buffer_size= self.buffer_size
         )
         self.logger.info(f'Received data with length {len(message)/1024/1024:.2f} MB')
-        vals = message.strip('\r\n').split(' ')
-        msg_code = vals[0]
-        vals = [v for v in vals[1:] if len(v) >0]
+        msg: list[str] = message.strip('\r\n').split(' ')
+        msg_code: str = msg[0]
+        vals: list[str] = [v for v in msg[1:] if len(v) >0]
         match msg_code:
             case 'ERROR':
                 self.logger.warning(message)
@@ -168,15 +175,15 @@ class AsyncScanManager:
                 return message, None
             case 'MEASURE':
                 n_pos = int(vals[0])
-                pos = np.asarray(vals[1:n_pos+1], dtype=float)
-                data = np.asarray(vals[n_pos+1:], dtype=float)
+                pos: NDArray[Any] = np.asarray(vals[1:n_pos+1], dtype=float)
+                data: NDArray[Any] = np.asarray(vals[n_pos+1:], dtype=float)
                 # data = data.reshape(640,400)
                 return pos, data
             case _:
                 self.logger.warning(f'Unknown message code: {msg_code}')
                 return message, None
         
-    def update_data_and_positions(self):
+    def update_data_and_positions(self) -> bool:
         """ Get data from SGM4"""
         if self._reduced_data_queue.qsize() > 0:
             self.logger.debug('Updating data and positions.')
@@ -201,7 +208,7 @@ class AsyncScanManager:
         self.logger.info('Starting fetch data loop.')
         while not self._should_stop:
             self.logger.info('Fetch data looping...')
-            pos, data = await self.fetch_data()
+            pos, data  = await self.fetch_data()
             if data is not None:
                 self._raw_data_queue.put_nowait((pos, data))
                 self.logger.debug(f'Put raw data in queue: {pos}, {data}')
@@ -209,12 +216,12 @@ class AsyncScanManager:
                 self.logger.debug('No data received.')
                 await asyncio.sleep(.5)
 
-    async def reduction_loop(self):
+    async def reduction_loop(self) -> None:
         self.logger.info('Starting reduction loop.')
         while not self._should_stop:
             self.logger.info('reduction looping...')
             if self._raw_data_queue.qsize() > 0:
-                pos,data = await self._raw_data_queue.get()
+                pos, data = await self._raw_data_queue.get()
                 self.logger.debug(f'reducing data with shape {data.shape}')
                 data = select_roi(
                     data.reshape((640,400)),
@@ -295,7 +302,7 @@ class AsyncScanManager:
                     answer = self.gp.ask(**ask_pars, acquisition_function=ndim_aqfunc)
                     next_pos = answer['x']
                     try:
-                        pos_on_grid = closest_point_on_grid(next_pos, axes=self.remote.axes)
+                        pos_on_grid: Tuple[int] = closest_point_on_grid(next_pos, axes=self.remote.axes)
                         self.logger.info(f'Next suggestesd position: {next_pos} rounded to {pos_on_grid}')
                         self.remote.ADD_POINT(*pos_on_grid)
                     except ValueError:
@@ -315,7 +322,6 @@ class AsyncScanManager:
             if self.batch_normalize:
                 vals = weights * vals / np.mean(vals)
             self.gp.tell(pos,vals)
-
 
     async def plotting_loop(self):
         self.logger.info('starting plotting tool loop')
@@ -398,7 +404,6 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
 
-    import logging
 
     # init logger
     logger = logging.getLogger('async_scan_manager')

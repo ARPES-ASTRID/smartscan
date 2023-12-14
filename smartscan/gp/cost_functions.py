@@ -95,7 +95,7 @@ def compute_costs(
         logger = logging.getLogger('compute_costs')
     cost = []
     for xx in x:
-        movcost: float = cost_func(origin,xx,cost_func_params,verbose=verbose,logger=logger)
+        movcost: float = movement_cost(origin,xx,cost_func_params,verbose=verbose,logger=logger)
         cost.append(movcost)
     logger.debug(f"Costs computed: {cost}")
     return np.asarray(cost).T

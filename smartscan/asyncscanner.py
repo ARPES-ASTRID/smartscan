@@ -147,12 +147,6 @@ class AsyncScanManager:
         with open(filepath, 'w') as fp:
             json.dump(all_dict, fp)
         return filepath
-        
-    async def async_fetch_data(self):
-        # DEPRECATED
-        await self.tcp.connect()
-        await self.tcp.send_message('MEASURE')
-        return await self.tcp.receive_message()
 
     async def fetch_data(self) -> tuple[str, None] | tuple[NDArray[Any], NDArray[Any]] | None:
         # message = await self.async_fetch_data()
@@ -203,7 +197,7 @@ class AsyncScanManager:
             self.logger.debug('No data in processed queue.')
             return False
 
-    async def fetch_data_loop(self):
+    async def fetch_data_loop(self) -> None:
         """ Get data from SGM4"""
         self.logger.info('Starting fetch data loop.')
         while not self._should_stop:
@@ -243,7 +237,7 @@ class AsyncScanManager:
                 self.logger.debug('No data in raw data queue.')
                 await asyncio.sleep(.2)
 
-    async def gp_loop(self):
+    async def gp_loop(self) -> None:
         iter_counter = 0
         self.logger.info('Starting GP loop.')
 
@@ -314,7 +308,7 @@ class AsyncScanManager:
     
         self.remote.END()
     
-    def tell_gp(self):
+    def tell_gp(self) -> None:
         if self.gp is not None:
             pos = np.asarray(self.positions)
             vals = np.asarray(self.values)
@@ -323,7 +317,7 @@ class AsyncScanManager:
                 vals = weights * vals / np.mean(vals)
             self.gp.tell(pos,vals)
 
-    async def plotting_loop(self):
+    async def plotting_loop(self) -> None:
         self.logger.info('starting plotting tool loop')
         fig = None
         aqf = None
@@ -347,7 +341,7 @@ class AsyncScanManager:
             # if fig is not None and iteration %100 == 0:
             #     fig.savefig(f'../results/{self.remote.filename.with_suffix("pdf").name}')
 
-    async def all_loops(self):
+    async def all_loops(self) -> None:
         """
         Start all the loops.
         """
@@ -364,20 +358,20 @@ class AsyncScanManager:
         self.logger.info('All loops finished.')
         self.remote.END()
 
-    async def start(self):
+    async def start(self) -> None:
         self.logger.info('Starting all loops.')
         self._should_stop = False
         await self.all_loops()
 
-    def stop(self):
+    def stop(self) -> None:
         self.logger.info('Stopping all loops.')
         self.kill()
 
-    def kill(self):
+    def kill(self) -> None:
         self.logger.info('Killing all loops.')
         self._should_stop = True
 
-    async def killer_loop(self,duration=None):
+    async def killer_loop(self,duration=None) -> None:
         self.logger.info(f'Starting killer loop. Will kill process after {duration} seconds.')
         if duration is None:
             duration = self.duration
@@ -385,7 +379,7 @@ class AsyncScanManager:
             await asyncio.sleep(duration)
             self.logger.info('Killer loop strikes!.')
             self.stop()
-       
+
 
 if __name__ == '__main__':
     print('Running asyncscanner...')

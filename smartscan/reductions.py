@@ -39,9 +39,20 @@ def sharpness(
         r: float = 1., 
         reduce: callable = np.mean
     ) -> float:
+    """Compute the sharpness of an image
+
+    Args:
+        data (np.ndarray): 2D array
+        sigma (float): sigma for the gaussian filter. Defaults to 2..
+        r (float): ratio for the derivative. Defaults to 1..
+        reduce (callable): function to reduce the sharpness map. Defaults to np.mean
+
+    Returns:
+        float: sharpness
+    """
     dx,dy = np.gradient(gaussian_filter(data,sigma=sigma))
-    ddx,dxdy = np.gradient(dx)
-    dydx,ddy = np.gradient(dy)
+    ddx,_ = np.gradient(dx)
+    _,ddy = np.gradient(dy)
     ddxddy = np.sqrt(ddx**2 + r*ddy**2)
     return reduce(ddxddy)
 

@@ -234,7 +234,7 @@ class SmartScan:
         # shuffle the remaining_idx
         remaining_idx = list(remaining_idx)
         random.shuffle(remaining_idx)
-        for next in remaining_idx[:n]:
+        for next in remaining_idx[:n_init]:
             self.sgm4.ADD_POINT(*next)
         
     def measurement_loop(self, max_iter:int = None, ) -> None:

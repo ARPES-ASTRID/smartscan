@@ -46,6 +46,7 @@ class SGM4Commands:
         self._spectrum_shape = None
         self._axes = None
         self._ndim = None
+        self._all_positions = None
 
     @property
     def filename(self) -> Path:
@@ -105,6 +106,13 @@ class SGM4Commands:
                     start, stop = stop, start
                 self._axes.append(np.arange(start, stop, step))
         return self._axes
+    
+    @property
+    def all_positions(self) -> List[List[float]]:
+        """all positions of the scan"""
+        if self._all_positions is None:
+            self._all_positions = np.asarray(np.meshgrid(*self.axes)).T.reshape(-1, self.ndim)
+        return self._all_positions
 
     def send_command(self, command, *args) -> None:
         """send a command to SGM4 and wait for a response

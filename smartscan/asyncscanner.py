@@ -38,6 +38,44 @@ LoggerLike: object = Union[Logger, logging.Logger]
 
 
 class AsyncScanManager:
+    """ AsyncScanManager class.
+    
+    This class is responsible for managing the scan.
+    It connects to the SGM4, fetches data, reduces it, trains the GP and asks for the next position.
+    
+    Args:
+        settings (dict | PathLike): A dictionary with the settings or a path to a yaml file with the settings.
+        logger (LoggerLike, optional): A logger object. Defaults to None.
+        
+    Attributes:
+        settings (dict): A dictionary with the settings.
+        logger (LoggerLike): A logger object.
+        remote (SGM4Commands): An object to communicate with the SGM4.
+        gp (fvGPOptimizer): The GP object.
+        positions (List): A list of positions.
+        values (List): A list of values.
+        hyperparameter_history (dict): A dictionary with the hyperparameters history.
+        last_spectrum (NDArray[Any]): The last spectrum.
+
+        _raw_data_queue (asyncio.Queue): A queue to store the raw data.
+        _reduced_data_queue (asyncio.Queue): A queue to store the reduced data.
+        _should_stop (bool): A flag to stop the scan.
+        _replot (bool): A flag to replot the data.
+        _task_weights (NDArray[Any]): An array with the task weights.
+        
+    TODOs:
+
+        - [ ] Add a method to save the data.
+        - [x] Add a method to save the settings.
+        - [ ] Add a method to save the hyperparameters history.
+        - [ ] improve the plotting.
+        - [ ] add interactive control of the scan.
+        - [ ] move initialization points to the settings file.
+        - [ ] get waiting time for initialization points from sgm4 or settings.
+        - [ ] add aks for multiple points.
+        
+
+    """
     def __init__(
         self,
         settings: PathLike | dict = None,
@@ -91,9 +129,10 @@ class AsyncScanManager:
 
         # init data
         self.positions: List = []
+        self.unique_positions: List = []
         self.values: List = []
         self.hyperparameter_history = {}
-        self._task_weights = None  # for fixed task weights
+        self.task_weights = None  # for fixed task weights
 
         # init plotting
         self.replot: bool = False
@@ -119,9 +158,9 @@ class AsyncScanManager:
         """
         if self.settings["scanning"]["normalize_values"] == "fixed":
             return 1 / np.array(self.settings["scanning"]["fixed_normalization"])
-        if self._task_weights is None or update:
-            self._task_weights = 1 / self.val_array.mean(axis=0)
-        return self._task_weights
+        if self.task_weights is None or update:
+            self.task_weights = 1 / self.val_array.mean(axis=0)
+        return self.task_weights
 
     def init_scan(self) -> None:
         """Initialize the scan."""
@@ -167,14 +206,16 @@ class AsyncScanManager:
                 raise FileNotFoundError(f"Folder {folder} does not exist.")
 
         target = filename.with_suffix(".yaml")
-        i = 0
-        while target.exists():
-            i += 1
+        # i = 0
+        if not target.exists():
+        # while target.exists():
+            # i += 1
             # target = folder / filename.append("_{i:03.0f}").with_suffix(".yaml")
-            raise NotImplementedError("multiple runs for the same measurement run is not working yet...")
-        shutil.copy(self.settings_file, target)
-        self.logger.info(f"Settings saved to {target}")
-
+            # raise NotImplementedError("multiple runs for the same measurement run is not working yet...")
+            shutil.copy(self.settings_file, target)
+            self.logger.info(f"Settings saved to {target}")
+        else:
+            self.logger.critical(f"FAILED TO SAVE SETTINGS TO {target}. File exists!!")
     # get data from SGM4
     async def fetch_data(
         self,
@@ -209,7 +250,6 @@ class AsyncScanManager:
                 n_pos = int(vals[0])
                 pos: NDArray[Any] = np.asarray(vals[1 : n_pos + 1], dtype=float)
                 data: NDArray[Any] = np.asarray(vals[n_pos + 1 :], dtype=float)
-                # shape = self.settings['data']['shape'] # TODO: request from SGM4
                 data = data.reshape(self.remote.spectrum_shape)
 
                 return pos, data
@@ -294,6 +334,10 @@ class AsyncScanManager:
                 try:
                     pos, data = self._reduced_data_queue.get_nowait()
                     self.positions.append(pos)
+                    # if len(self.unique_positions) == 0:
+                    #     self.unique_positions.append(pos)
+                    # elif np.any(np.all(pos == self.unique_positions, axis=1)):
+                    #     self.unique_positions.append(pos)
                     self.values.append(data)
                     n_new += 1
                 except asyncio.QueueEmpty:
@@ -332,16 +376,19 @@ class AsyncScanManager:
         This method is called at the first iteration of the GP loop.
         """
         self.logger.debug("Starting GP initialization.")
-        # TODO: make automatic detection of optimizer parameters
+        isd = len(self.remote.axes)
+        osd = 1
+        on = len(self.task_labels)
         self.gp = fvGPOptimizer(
             input_space_bounds=self.remote.limits,
-            input_space_dimension=int(
-                self.settings["gp"]["optimizer"]["input_space_dimension"]
-            ),
-            output_space_dimension=int(
-                self.settings["gp"]["optimizer"]["output_space_dimension"]
-            ),
-            output_number=int(self.settings["gp"]["optimizer"]["output_number"]),
+            input_space_dimension=isd,
+            output_space_dimension=osd,
+            output_number=on,
+        )
+        self.logger.debug(
+            f"GP object created. Input Space Dimension () = {isd} | "
+            f"Output Space Dimension () = {osd} | "
+            f"Output Number () = {on}"
         )
         self.tell_gp()
         self.logger.info(f"Initialized GP with {len(self.positions)} samples.")
@@ -441,8 +488,25 @@ class AsyncScanManager:
                     aqf = partial(acq_func_callable, **acq_func_params)
 
                     ask_pars = self.settings["gp"]["ask"]
-                    # TODO: add points to evaluate based on the map settings.
-                    answer = self.gp.ask(**ask_pars, acquisition_function=aqf)
+                    all_positions = self.remote.all_positions
+                    visited_positions = np.unique(self.positions)
+                    missing_positions = np.setdiff1d(all_positions,visited_positions)
+                    self.logger.debug(
+                        f"Positions evaluated: {len(visited_positions)}/{len(all_positions)} | "
+                        f"{len(visited_positions)/len(all_positions):.2%}"
+                    )
+                    if len(missing_positions) == 0:
+                        self.logger.info(
+                            "No more positions to evaluate. Ending scan."
+                        )
+                        self._should_stop = True
+                        break
+                    
+                    answer = self.gp.ask(
+                        acquisition_function=aqf,
+                        x0 = missing_positions,
+                        **ask_pars
+                    )
                     next_pos = answer["x"]
                     # Remove once the correct points are passed to the ask function.
                     # |<--

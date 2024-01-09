@@ -5,8 +5,78 @@ import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 from scipy.spatial import Voronoi
 
+from typing import Literal, Sequence
+from scipy.interpolate import griddata
+import xarray as xr
+__all__ = [
+    'min_step_size',
+    'interpolate_sparse_array',
+    'voronoi_polygon_plot',
+]
 
-def vornoi_plot(
+def min_step_size(arr):
+    """ Returns the minimum step size in a 1D array """
+    b = np.diff(np.sort(arr))
+    return b[b>0].min()
+
+def interpolate_points_to_array(
+        positions: np.ndarray, 
+        values: np.ndarray, 
+        method: Literal['nearest','linear','cubic'] = 'nearest',
+        dims: Sequence[str] = ['x','y'],
+        coords: dict[np.ndarray | Sequence[float]] = None,
+        max_size: int = 1000,
+        attrs: dict = None,
+        name: str = None,
+        border_steps:int = 20,
+        **kwargs
+    ) -> xr.DataArray:
+    """ Interpolate a set of points to a regular grid.
+
+    Args:
+        positions: The positions of the points to interpolate.
+        values: The values of the points to interpolate.
+        method: The interpolation method to use. One of 'nearest', 'linear', or 'cubic'.
+        dims: The names of the dimensions of the output array.
+        coords: The coordinates of the output array. If None, the coordinates are inferred from the positions.
+        max_size: The maximum size of the output array. If the inferred size is larger than this, the array is truncated.
+        attrs: The attributes of the output array.
+        name: The name of the output array.
+        border_steps: The number of steps to add to the border of the output array.
+        **kwargs: Additional arguments to pass to scipy.interpolate.griddata.
+    
+    Returns:
+        The interpolated array.
+    """
+    if coords is None:
+        xmax, xmin, xstep = positions[:,0].max(), positions[:,0].min(), min_step_size(positions[:,0])
+        xmin, xmax = xmin - border_steps*xstep, xmax + border_steps*xstep
+        ymax ,ymin, ystep = positions[:,1].max(), positions[:,1].min(), min_step_size(positions[:,1])
+        ymin, ymax = ymin - border_steps*ystep, ymax + border_steps*ystep
+        xlen = min(int((xmax-xmin)/xstep), max_size)
+        ylen = min(int((ymax-ymin)/ystep), max_size)
+        coords = {
+            dims[0]:np.linspace(xmin,xmax,xlen), 
+            dims[1]:np.linspace(ymin,ymax,ylen), 
+        }
+    if attrs is None: 
+        attrs = {}
+    attrs.update({
+        'interp_method':method, 
+        'truncated':any([xlen==max_size, ylen==max_size])
+    })
+    grid_x, grid_y = np.meshgrid(coords[dims[1]], coords[dims[0]])
+    sparse_data = griddata(positions, values, (grid_x, grid_y), method=method, **kwargs)
+    xarr = xr.DataArray(
+        data = sparse_data,
+        coords = coords,
+        dims = dims,
+        attrs = attrs,
+        name = name,
+    )
+    return xarr
+
+def voronoi_polygon_plot(
         points: np.ndarray, 
         values: np.ndarray = None, 
         cmap: Callable | str = cm.viridis, 
@@ -73,6 +143,7 @@ def vornoi_plot(
     if border is not None:
         ax.set_xlim(limits[0] - box_size[0] * border, limits[1] +  box_size[0] * border)
         ax.set_ylim(limits[2] - box_size[1] * border, limits[3] +  box_size[1] * border)
+    return ax
 
 ##############
 # DEPRECATED #

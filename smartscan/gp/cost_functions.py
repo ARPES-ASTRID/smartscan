@@ -1,4 +1,4 @@
-from typing import Callable, Sequence, Tuple
+from typing import Any, Callable, Sequence, Tuple
 import logging
 import numpy as np
 
@@ -62,7 +62,7 @@ def movement_cost(
     if len(cost_func_params) > 0:
         raise ValueError(f"Unrecognized parameters: {cost_func_params.keys()}")
     distance = manhattan_distance(origin,x) * point_to_um
-    time = weight * distance / speed  + dwell_time + dead_time
+    time: float = weight * distance / speed  + dwell_time + dead_time
     if verbose:
         logger.debug(f"Distance: {distance:.2f} um, Time: {time:.2f} s"
             f" (dwell: {dwell_time:.2f} s, dead: {dead_time:.2f} s)" 
@@ -76,13 +76,75 @@ def compute_costs(
         cost_func_params: dict = None, 
         verbose=False,
         logger=None,
-    ) -> float:
+    ) -> np.ndarray[float]:
+    """ Compute the cost of moving from origin to each point in x
+    
+    Args:
+        origin (tuple): starting position
+        x (tuple): list of N ending positions
+        cost_func_params (dict): dictionary of parameters for the cost function
+            - speed (float): speed of the scanner, expressed in mm/s
+            - dwell_time (float): dwell time, expressed in s
+            - dead_time (float): dead time, expressed in s
+            - point_to_um (float): conversion factor from mm to seconds#
+    
+    Returns:
+        Sequence[float]: cost of moving from origin to each point in x, expressed in seconds
+    """
     if logger is None:
         logger = logging.getLogger('compute_costs')
     cost = []
     for xx in x:
-        movcost = cost_func(origin,xx,cost_func_params,verbose=verbose,logger=logger)
+        movcost: float = movement_cost(origin,xx,cost_func_params,verbose=verbose,logger=logger)
         cost.append(movcost)
     logger.debug(f"Costs computed: {cost}")
     return np.asarray(cost).T
 
+def manhattan_cost_function(
+        origin: np.ndarray[float],
+        x: Sequence[Tuple[float,float]],
+        cost_func_params: dict[str, Any] = None,
+    ) -> float:
+    """Compute the movement cost between two points
+
+    Args:
+        origin (Sequence[float]): origin point
+        x (Sequence[float]): destination point
+        cost_func_params (dict[str, Any], optional): cost function parameters. 
+            All parameters need to be passed in this dictionary because of the structure
+            imposed by gpCAM. Defaults to None, which means that the default parameters are:
+            - speed (float): 250 um/s
+            - dwell_time (float): 0.5 s
+            - dead_time (float): 0.6 s
+            - point_to_um (float): 1.0 um/point unit conversion factor
+    
+    Returns:
+        float: movement cost
+    """
+    origin = np.array(origin)
+    assert origin.shape[0] == 2, "origin must be a 2D point"
+
+    x = np.array(x)
+    if x.ndim == 1:
+        x = x.reshape(-1,1) # make sure x is a 2D array
+    assert x.shape[1] == 2, "x must be a 2D point or a list of 2D points"
+
+    # gather parameters
+    if cost_func_params is None:
+        cost_func_params = {}
+    else:
+        cost_func_params = cost_func_params.copy()
+    speed = cost_func_params.get('speed',250)
+    dwell_time = cost_func_params.get('dwell_time',0.5)
+    dead_time = cost_func_params.get('dead_time',0.6)
+    point_to_um = cost_func_params.get('point_to_um',1.0)
+    weight = cost_func_params.get('weight',1.0)
+
+    if any([k not in ['speed','dwell_time','dead_time','point_to_um','weight'] 
+            for k in cost_func_params.keys()]):
+        raise ValueError(f"Unrecognized parameters: {cost_func_params.keys()}")
+    times = np.zeros(x.shape[0])
+    for i in range(x.shape[0]):
+        distance = manhattan_distance(origin,x[i,:]) * point_to_um
+        times[i] = weight * distance / speed  + dwell_time + dead_time
+    return times

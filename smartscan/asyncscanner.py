@@ -1,324 +1,548 @@
-from typing import Callable, Sequence, Tuple, Union, List
+from typing import Callable, Sequence, Tuple, Union, List, Any
+from numpy.typing import NDArray, ArrayLike
 from pathlib import Path
-from datetime import datetime
-import json
+import logging
+from functools import partial
+import time
+import shutil
+from sympy import bool_map
+
+import yaml
 import asyncio
 import numpy as np
-from smartscan.TCP import send_tcp_message
-from smartscan.gp import fvGPOptimizer, ndim_aqfunc, compute_costs,plot_acqui_f
-from smartscan.sgm4commands import SGM4Commands
-from smartscan.utils import closest_point_on_grid
-from smartscan.reductions import compose, sharpness, mean_std, select_roi
-import matplotlib.pyplot as plt 
+from .TCP import send_tcp_message
+from .gp import aquisition_functions, cost_functions, plot
+from .sgm4commands import SGM4Commands
+from .utils import closest_point_on_grid
+from . import preprocessing
+from . import tasks
+import matplotlib.pyplot as plt
 
-optimizer_pars = {
-    'input_space_dimension': 2,
-    'output_space_dimension': 1,
-    'output_number': 2,
-}
-hyperparameter_bounds = np.array(
-    [[0.001,1e9],[1,1000],[1,1000],[1,1000],[1,1000]]
-)
-init_hyperparameters = np.array(
-        [4.71907062e+06, 4.07439017e+02, 3.59068120e+02, 4e2, 4e2]
-)
-train_pars = {
-    'hyperparameter_bounds': hyperparameter_bounds,
-    'pop_size': 20,
-    'tolerance': 1e-6,
-    'max_iter': 2,
-}
-fvgp_pars = {
-    'init_hyperparameters' : init_hyperparameters,
-    'compute_device': 'cpu',
-    'gp_kernel_function': None,
-    'gp_mean_function': None,
-    'use_inv':False,
-    'ram_economy': True,
-}
-ask_pars = {
-    'n': 1, 
-    'bounds': None,
-    'method': 'global', 
-    'pop_size': 20, 
-    'max_iter': 10, 
-    'tol': 10e-6, 
-    'x0': None, 
-    'dask_client': None,
-}
-cost_func_params = {
-    'speed':300,
-    'dwell_time':1,
-    'dead_time':0.6,
-    # 'point_to_um':15,
-    'weight':.1,
-    'min_distance':.99
-}
+from gpcam.gp_optimizer import fvGPOptimizer
+
+# import matplotlib.pyplot as plt
+
+PathLike: object = Union[str, Path]
 
 
 class Logger:
-    def __init__(self):
-        self.info = print
-        self.debug = print
-        self.error = print
-        self.warning = print
-        self.critical = print
+    def __init__(self) -> None:
+        self.info: Callable = print
+        self.debug: Callable = print
+        self.error: Callable = print
+        self.warning: Callable = print
+        self.critical: Callable = print
+
+
+LoggerLike: object = Union[Logger, logging.Logger]
+
 
 class AsyncScanManager:
+    """ AsyncScanManager class.
+    
+    This class is responsible for managing the scan.
+    It connects to the SGM4, fetches data, reduces it, trains the GP and asks for the next position.
+    
+    Args:
+        settings (dict | PathLike): A dictionary with the settings or a path to a yaml file with the settings.
+        logger (LoggerLike, optional): A logger object. Defaults to None.
+        
+    Attributes:
+        settings (dict): A dictionary with the settings.
+        logger (LoggerLike): A logger object.
+        remote (SGM4Commands): An object to communicate with the SGM4.
+        gp (fvGPOptimizer): The GP object.
+        positions (List): A list of positions.
+        values (List): A list of values.
+        hyperparameter_history (dict): A dictionary with the hyperparameters history.
+        last_spectrum (NDArray[Any]): The last spectrum.
 
+        _raw_data_queue (asyncio.Queue): A queue to store the raw data.
+        _reduced_data_queue (asyncio.Queue): A queue to store the reduced data.
+        _should_stop (bool): A flag to stop the scan.
+        _replot (bool): A flag to replot the data.
+        _task_weights (NDArray[Any]): An array with the task weights.
+        
+    TODOs:
+
+        - [ ] Add a method to save the data.
+        - [x] Add a method to save the settings.
+        - [ ] Add a method to save the hyperparameters history.
+        - [ ] improve the plotting.
+        - [ ] add interactive control of the scan.
+        - [ ] move initialization points to the settings file.
+        - [ ] get waiting time for initialization points from sgm4 or settings.
+        - [ ] add aks for multiple points.
+        
+
+    """
     def __init__(
-            self,
-            host:str = 'localhost', 
-            port:int = 54333,
-            buffer_size:int =  1024*1024*8,
-            train_at: Sequence[int]= [20,40,80,160,320,640,1280,2560,5120,10240],
-            train_every: int = 0,
-            duration: float=None,
-            max_iterations: int=1000,
-            use_cost_function:bool = True,
-            batch_normalize:bool = True,
-            logger=None
-        ) -> None:
-        self.host = host
-        self.port = port
-        self.buffer_size = buffer_size
-        self.duration = duration
-        self.max_iterations = max_iterations
-        self.remote = SGM4Commands(host, port, buffer_size=buffer_size)
+        self,
+        settings: PathLike | dict = None,
+        logger: LoggerLike = None,
+    ) -> None:
+        """
+        Initialize the AsyncScanManager object.
+
+        Args:
+            settings (dict | PathLike): A dictionary with the settings or a path to a yaml file with
+            the settings.
+        """
+        # load settings
+        if isinstance(settings, PathLike):
+            self.settings_file = settings
+            with open(settings) as f:
+                self.settings = yaml.load(f, Loader=yaml.FullLoader)
+        else:
+            raise ValueError("Settings must be a path to a yaml file.")
+
+        # set logger
+        if logger is not None:
+            self.logger: Logger = logger
+        else:
+            self.logger = Logger()
+        self.logger.info("Initialized AsyncScanManager.")
+
+        self.task_labels: List[str] = list(self.settings["tasks"].keys())
+
+        # connect to SGM4
+        self.remote = SGM4Commands(
+            self.settings["TCP"]["host"],
+            self.settings["TCP"]["port"],
+            buffer_size=self.settings["TCP"]["buffer_size"],
+        )
         self.remote.connect()
         if len(self.remote.axes[0]) == 0:
-            raise ValueError('failed initializing axes!!')
+            raise ValueError("failed initializing axes!!")
         else:
-            print(f' Axes is {self.remote.axes}')
+            print(
+                f"Axes: {[a.shape for a in self.remote.axes]} | Limits: {self.remote.limits} | Step size: {self.remote.step_size} "
+            )
 
-        self._raw_data_queue = asyncio.Queue()
-        self._reduced_data_queue = asyncio.Queue()
+        # init queues
+        self._raw_data_queue: asyncio.Queue = asyncio.Queue()
+        self._reduced_data_queue: asyncio.Queue = asyncio.Queue()
+
+        # init GP
         self.gp = None
-        self.positions = []
-        self.values = []
-        self.train_at = train_at
-        self.train_every = train_every
-        self.use_cost_function = use_cost_function
-        self.replot = False
-        self.batch_normalize = batch_normalize
+        self._should_stop: bool = False
+
+        # init data
+        self.positions: List = []
+        self.unique_positions: List = []
+        self.values: List = []
+        self.hyperparameter_history = {}
+        self.task_weights = None  # for fixed task weights
+
+        # init plotting
+        self.replot: bool = False
         self.last_spectrum = None
 
-        if logger is not None:
+        self.save_settings()
 
-            self.logger = logger
-            # self.logger = logging.getLogger(__name__)
-            # self.logger.setLevel(logging.DEBUG)
+    @property
+    def val_array(self) -> NDArray[Any]:
+        """Get the values as an array."""
+        return np.asarray(self.values, dtype=float)
+
+    @property
+    def pos_array(self) -> NDArray[Any]:
+        """Get the positions as an array."""
+        return np.asarray(self.positions, dtype=float)
+
+    def get_taks_normalization_weights(self, update=False) -> NDArray[Any]:
+        """Get the weights to normalize the tasks.
+
+        Returns:
+            NDArray[Any]: An array with the weights.
+        """
+        if self.settings["scanning"]["normalize_values"] == "fixed":
+            return 1 / np.array(self.settings["scanning"]["fixed_normalization"])
+        if self.task_weights is None or update:
+            self.task_weights = 1 / self.val_array.mean(axis=0)
+        return self.task_weights
+
+    def init_scan(self) -> None:
+        """Initialize the scan."""
+        self.logger.info("Initializing scan.")
+        # TODO: add this to settings and give more options
+        relative_points = [
+            [0, 0],
+            [0, 0.5],
+            [0, 1],
+            [0.5, 1],
+            [1, 1],
+            [1, 0.5],
+            [1, 0],
+            [0.5, 0],
+            [0.5, 0.5],
+        ]
+        for p in relative_points:
+            x = p[0] * self.remote.limits[0][1] + (1 - p[0]) * self.remote.limits[0][0]
+            y = p[1] * self.remote.limits[1][1] + (1 - p[1]) * self.remote.limits[1][0]
+            self.remote.ADD_POINT(x, y)
+        # time.sleep(len(relative_points) * 1) # TODO: get waiting time from sgm4 or settings
+        self.logger.info("Scan initialized.")
+
+    def save_settings(
+        self,
+    ) -> Path:
+        """Save the settings in the data directory next to the acquired data.
+
+        Args:
+            filename (Path | str, optional): _description_. Defaults to "settings.json".
+            folder (Path | str, optional): _description_. Defaults to "./".
+
+        Raises:
+            NotImplementedError: _description_
+
+        Returns:
+            Path: _description_
+        """
+        filename: Path = Path(self.remote.filename)
+        folder: Path = filename.parent
+        if not filename.exists():
+            if not folder.exists():
+                raise FileNotFoundError(f"Folder {folder} does not exist.")
+
+        target = filename.with_suffix(".yaml")
+        # i = 0
+        if not target.exists():
+        # while target.exists():
+            # i += 1
+            # target = folder / filename.append("_{i:03.0f}").with_suffix(".yaml")
+            # raise NotImplementedError("multiple runs for the same measurement run is not working yet...")
+            shutil.copy(self.settings_file, target)
+            self.logger.info(f"Settings saved to {target}")
         else:
-            logger = Logger()
-        self.logger.info('Initialized AsyncScanManager.')
+            self.logger.critical(f"FAILED TO SAVE SETTINGS TO {target}. File exists!!")
+    # get data from SGM4
+    async def fetch_data(
+        self,
+    ) -> tuple[str, None] | tuple[NDArray[Any], NDArray[Any]] | None:
+        """Get data from SGM4.
 
-    def save_settings(self, filename:str='settings.json', folder:str='./') -> None:
-        # save to file
-        folder = Path(folder) if folder is not None else Path.cwd()
-        filename = Path(filename)
-        if folder/filename.exists():
-            filename = Path(f'{filename.stem}_{datetime.now().strftime("%Y%m%d_%H%M%S")}{filename.suffix}')
-        filepath = folder/filename
-        all_dict = {
-            'host': self.host,
-            'port': self.port,
-            'buffer_size': self.buffer_size,
-            'duration': self.duration,
-            'max_iterations': self.max_iterations,
-            'train_at': self.train_at,
-        }
-        for dict_ in [optimizer_pars, train_pars, fvgp_pars, ask_pars, cost_func_params]:
-            # make lists of any numpy array
-            out = {}
-            for k,v in dict_.items():
-                if isinstance(v, np.ndarray):
-                    out[k] = v.tolist()
-                else:
-                    out[k] = v
-            all_dict.update(out)
-
-        with open(filepath, 'w') as fp:
-            json.dump(all_dict, fp)
-        return filepath
-        
-    async def async_fetch_data(self):
-        # DEPRECATED
-        await self.tcp.connect()
-        await self.tcp.send_message('MEASURE')
-        return await self.tcp.receive_message()
-
-    async def fetch_data(self):
-        # message = await self.async_fetch_data()
-        message = send_tcp_message(
-            host = self.host, 
-            port = self.port,
-            msg = 'MEASURE',
-            buffer_size= self.buffer_size
+        Returns:
+            tuple[str, None] | tuple[NDArray[Any], NDArray[Any]] | None:
+                - tuple[str, None] if there was an error
+                - tuple[NDArray[Any], NDArray[Any]] if there was no error
+                - None if no data was received
+        """
+        # message = self.async_fetch_data()
+        message: str = send_tcp_message(
+            host=self.settings["TCP"]["host"],
+            port=self.settings["TCP"]["port"],
+            msg="MEASURE",
+            buffer_size=self.settings["TCP"]["buffer_size"],
         )
-        self.logger.info(f'Received data with length {len(message)/1024/1024:.2f} MB')
-        vals = message.strip('\r\n').split(' ')
-        msg_code = vals[0]
-        vals = [v for v in vals[1:] if len(v) >0]
+        self.logger.info(f"Received data with length {len(message)/1024/1024:.2f} MB")
+        msg: list[str] = message.strip("\r\n").split(" ")
+        msg_code: str = msg[0]
+        vals: list[str] = [v for v in msg[1:] if len(v) > 0]
         match msg_code:
-            case 'ERROR':
+            case "ERROR":
                 self.logger.warning(message)
                 return message, None
-            case 'NO_DATA':
+            case "NO_DATA":
                 self.logger.warning(message)
                 return message, None
-            case 'MEASURE':
+            case "MEASURE":
                 n_pos = int(vals[0])
-                pos = np.asarray(vals[1:n_pos+1], dtype=float)
-                data = np.asarray(vals[n_pos+1:], dtype=float)
-                # data = data.reshape(640,400)
+                pos: NDArray[Any] = np.asarray(vals[1 : n_pos + 1], dtype=float)
+                data: NDArray[Any] = np.asarray(vals[n_pos + 1 :], dtype=float)
+                data = data.reshape(self.remote.spectrum_shape)
+
                 return pos, data
             case _:
-                self.logger.warning(f'Unknown message code: {msg_code}')
+                self.logger.warning(f"Unknown message code: {msg_code}")
                 return message, None
-        
-    def update_data_and_positions(self):
-        """ Get data from SGM4"""
+
+    async def fetch_data_loop(self) -> None:
+        """Loop to fetch data from SGM4 and put it in the raw data queue."""
+        self.logger.info("Starting fetch data loop.")
+        await asyncio.sleep(1)  # wait a bit before starting
+        while not self._should_stop:
+            self.logger.info("Fetch data looping...")
+            pos, data = await self.fetch_data()
+            await asyncio.sleep(0.1)
+            if data is not None:
+                self._raw_data_queue.put_nowait((pos, data))
+                self.logger.debug(
+                    f"Added raw data to queue: pos: {pos}, data shape: {data.shape} | queue size: {self._raw_data_queue.qsize()}"
+                )
+            else:
+                self.logger.debug("No data received.")
+                await asyncio.sleep(0.2)  # wait a bit before trying again
+
+    # reduce data and update GP
+    async def reduction_loop(self) -> None:
+        """Reduce raw spectra to an array of N tasks and put it in the processed queue"""
+        self.logger.info("Starting reduction loop.")
+        while not self._should_stop:
+            self.logger.debug("Running reduction step...")
+            if self._raw_data_queue.qsize() > 0:
+                pos, data = await self._raw_data_queue.get()
+                self.logger.debug(f"Reduction for pos: {pos} | with shape {data.shape}")
+                # preprocess data
+                pp = data.copy()
+                for _, d in self.settings["preprocessing"].items():
+                    func = getattr(preprocessing, d["function"])
+                    kwargs = d.get("params", {})
+                    if kwargs is None:
+                        pp = func(pp)
+                    else:
+                        pp = func(pp, **kwargs)
+                self.last_spectrum = pp
+                self.logger.debug(
+                    f"Reduction for pos: {pos} | preprocessed shape {pp.shape} | pp data : {pp.mean():.3f} ± {pp.std():.3f}"
+                )
+
+                # reduce data
+                reduced = []
+                for _, d in self.settings["tasks"].items():
+                    func = getattr(tasks, d["function"])
+                    kwargs = d.get("params", {})
+                    if kwargs is None:
+                        reduced.append(func(pp))
+                    else:
+                        reduced.append(func(pp, **kwargs))
+                reduced = np.asarray(reduced, dtype=float).flatten()
+                if len(reduced) != len(self.task_labels):
+                    raise RuntimeError(
+                        f"Length mismatch between tasks {len(reduced)}"
+                        f"and task labels {len(self.task_labels)}."
+                    )
+                self._reduced_data_queue.put_nowait((pos, reduced))
+                self.logger.info(
+                    f"Added reduced data to queue || pos: {pos}, tasks: {reduced} | queue size: {self._reduced_data_queue.qsize()}"
+                )
+            else:
+                self.logger.debug("No data in raw data queue.")
+                await asyncio.sleep(0.2)  # wait a bit before trying again
+
+    def update_data_and_positions(self) -> bool:
+        """Update data and positions from the processed queue.
+
+        Return True if new data was added, False if not.
+        """
         if self._reduced_data_queue.qsize() > 0:
-            self.logger.debug('Updating data and positions.')
+            self.logger.debug(
+                f"Updating data and positions. Queue size: {self._reduced_data_queue.qsize()}"
+            )
             n_new = 0
             while True:
                 try:
                     pos, data = self._reduced_data_queue.get_nowait()
                     self.positions.append(pos)
+                    # if len(self.unique_positions) == 0:
+                    #     self.unique_positions.append(pos)
+                    # elif np.any(np.all(pos == self.unique_positions, axis=1)):
+                    #     self.unique_positions.append(pos)
                     self.values.append(data)
                     n_new += 1
                 except asyncio.QueueEmpty:
                     break
             self.tell_gp()
-            self.logger.info(f'Updated data with {n_new} new points. Total: {len(self.positions)} last Pos {self.positions[-1]} {self.values[-1]}.')
+            self.logger.info(
+                f"Updated data with {n_new} new points. Total: {len(self.positions)} last Pos {self.positions[-1]} {self.values[-1]}."
+            )
             return True
         else:
-            self.logger.debug('No data in processed queue.')
+            self.logger.debug("Reduced queue is empty. No data to update.")
             return False
 
-    async def fetch_data_loop(self):
-        """ Get data from SGM4"""
-        self.logger.info('Starting fetch data loop.')
-        while not self._should_stop:
-            self.logger.info('Fetch data looping...')
-            pos, data = await self.fetch_data()
-            if data is not None:
-                self._raw_data_queue.put_nowait((pos, data))
-                self.logger.debug(f'Put raw data in queue: {pos}, {data}')
-            else:
-                self.logger.debug('No data received.')
-                await asyncio.sleep(.5)
+    def tell_gp(self, update_normalization: bool = False) -> None:
+        """Tell the GP about the current available data.
 
-    async def reduction_loop(self):
-        self.logger.info('Starting reduction loop.')
-        while not self._should_stop:
-            self.logger.info('reduction looping...')
-            if self._raw_data_queue.qsize() > 0:
-                pos,data = await self._raw_data_queue.get()
-                self.logger.debug(f'reducing data with shape {data.shape}')
-                data = select_roi(
-                    data.reshape((640,400)),
-                    x_lim = (330,500),
-                    y_lim = (20,380),
-                )
-                self.last_spectrum = data.copy()
-                reduced = compose(
-                    data, 
-                    np.mean, 
-                    sharpness, 
-                    func_b_kwargs = {'sigma':5, 'r':1, 'reduce':np.mean}
-                )
-                # reduced = reduced * 1000
-                # self.logger.info(f'adding {(pos,reduced)} to processed queue')
-                self._reduced_data_queue.put_nowait((pos,reduced))
-                self.logger.info(f'added {(pos,reduced)} to processed queue, currently {self._reduced_data_queue.qsize()}')
-            else:
-                self.logger.debug('No data in raw data queue.')
-                await asyncio.sleep(.2)
-
-    async def gp_loop(self):
-        iter_counter = 0
-        self.logger.info('Starting GP loop.')
-
-        while not self._should_stop:
-            self.logger.debug('GP looping...')
-            if iter_counter > self.max_iterations:
-                self.logger.info(f"Max number of iterations of {self.max_iterations} reached. Ending scan.")
-                self._should_stop = True
-            has_new_data = self.update_data_and_positions()
-            if has_new_data:
-                iter_counter += 1
-                if self.gp is None:
-                    # filename = self.save_settings()
-                    # self.logger.info(f'saved settings to {filename}')
-                    self.logger.debug('Starting GP initialization.')
-                    self.gp = fvGPOptimizer(
-                        input_space_bounds = self.remote.limits,
-                        input_space_dimension= 2,
-                        output_space_dimension = 1,
-                        output_number = 2,  
-                    )
-                    self.tell_gp()
-                    self.logger.info(f'Initialized GP with {len(self.positions)} samples.')
-                    self.gp.init_fvgp(**fvgp_pars)
-                    self.logger.info('Initialized GP. Training...')
-                    self.gp.train_gp(**train_pars)
-                    if self.use_cost_function:
-                        cost_func_params.update({
-                                        'prev_points': self.gp.x_data, 
-                                        'point_to_um': self.remote.step_size[0],
-                        })
-                        self.gp.init_cost(
-                            compute_costs, 
-                            cost_function_parameters = cost_func_params,
-                        )
-                else:
-                    self.logger.info('gp looping...')
-                    retrain = False
-                    if iter_counter in self.train_at:
-                        retrain = True
-                    elif self.train_every > 0 and iter_counter % self.train_every == 0:
-                        retrain = True
-                    # f len(self.positions) in self.train_at:
-                    if retrain:
-                        print('############################################################\n\n\n')
-                        self.logger.info(f'Training GP at iteration {iter_counter}, with {len(self.positions)} samples.')
-                        
-                        old_params = self.gp.hyperparameters.copy()
-                        self.gp.train_gp(**train_pars)
-                        new_params =  self.gp.hyperparameters.copy()
-                        s = 'hyperparams: '
-                        for new,old in zip(new_params,old_params):
-                            s += f"{new:,.2f} ({(new-old)/old:.2%}) |"
-                        self.logger.debug(s)
-                        print('\n\n\n############################################################')
-                    answer = self.gp.ask(**ask_pars, acquisition_function=ndim_aqfunc)
-                    next_pos = answer['x']
-                    try:
-                        pos_on_grid = closest_point_on_grid(next_pos, axes=self.remote.axes)
-                        self.logger.info(f'Next suggestesd position: {next_pos} rounded to {pos_on_grid}')
-                        self.remote.ADD_POINT(*pos_on_grid)
-                    except ValueError:
-                        self.logger.error(f'Error comparing {next_pos} to previous positions to set it on grid. with axes {self.remote.axes}')
-                    self.replot = True
-            else:
-                self.logger.debug('No data to update.')
-                await asyncio.sleep(.2)
-    
-        self.remote.END()
-    
-    def tell_gp(self):
+        This method is called every time new data is added to the data queue.
+        If scanning/normalize_values is not false, values are normalized.
+            - 'init': values are normalized by the mean of the first batch of data
+            - 'fixed': values are normalized by the value of scanning/fixed_normalization
+            - 'dynamic': values are normalized by the mean of all the current data
+        """
         if self.gp is not None:
             pos = np.asarray(self.positions)
             vals = np.asarray(self.values)
-            weights = np.asarray([100,10_000])
-            if self.batch_normalize:
-                vals = weights * vals / np.mean(vals)
-            self.gp.tell(pos,vals)
+            if self.settings["scanning"]["normalize_values"] == "always":
+                vals = vals * self.get_taks_normalization_weights(update=True)
+            elif self.settings["scanning"]["normalize_values"] != "never":
+                vals = vals * self.get_taks_normalization_weights(update=update_normalization)
+            self.gp.tell(pos, vals)
 
+    # GP loop
+    def init_gp(self) -> None:
+        """Initialize the GP.
 
-    async def plotting_loop(self):
-        self.logger.info('starting plotting tool loop')
+        This method is called at the first iteration of the GP loop.
+        """
+        self.logger.debug("Starting GP initialization.")
+        isd = len(self.remote.axes)
+        osd = 1
+        on = len(self.task_labels)
+        self.gp = fvGPOptimizer(
+            input_space_bounds=self.remote.limits,
+            input_space_dimension=isd,
+            output_space_dimension=osd,
+            output_number=on,
+        )
+        self.logger.debug(
+            f"GP object created. Input Space Dimension () = {isd} | "
+            f"Output Space Dimension () = {osd} | "
+            f"Output Number () = {on}"
+        )
+        self.tell_gp()
+        self.logger.info(f"Initialized GP with {len(self.positions)} samples.")
+        fvgp_pars = self.settings["gp"]["fvgp"].copy()
+        init_hyperparameters = np.array(
+            [float(n) for n in fvgp_pars.pop("init_hyperparameters")]
+        )
+        self.logger.debug(
+            f"Initializing GP with parameters: {fvgp_pars} and init_hyperparameters: {init_hyperparameters}"
+        )
+        self.gp.init_fvgp(init_hyperparameters=init_hyperparameters, **fvgp_pars)
+        self.logger.info("Initialized GP. First Training...")
+        self.train_gp()
+        self.logger.info("GP trained.")
+        cost_function_dict = self.settings.get("cost_function", None)
+
+        if cost_function_dict is not None:
+            self.logger.info("Initializing cost function.")
+            cost_func_callable = getattr(cost_functions, cost_function_dict["function"])
+            self.gp.init_cost(
+                cost_func_callable,
+                cost_function_parameters=cost_function_dict.get("params", {}),
+            )
+
+    def train_gp(self) -> None:
+        """Train the GP."""
+        # print('############################################################\n\n\n')
+        self.logger.info(
+            f"Training GP at iteration {self.iter_counter}, with {len(self.positions)} samples."
+        )
+        old_params = self.gp.hyperparameters.copy()
+        t = time.time()
+        self.tell_gp(update_normalization=True)
+        train_pars = self.settings["gp"]["training"].copy()
+        hps_bounds = np.asarray(train_pars.pop("hyperparameter_bounds"))
+        self.logger.debug(f"Hyperparameter bounds: {hps_bounds}")
+        self.gp.train_gp(hyperparameter_bounds=hps_bounds, **train_pars)
+
+        dt = time.time() - t
+        new_params = self.gp.hyperparameters.copy()
+        s = "hyperparams: "
+        changes = []
+        for new, old in zip(new_params, old_params):
+            changes.append((new - old) / old)
+            s += f"{new:,.2f} ({changes[-1]:.2%}) |"
+
+        self.logger.debug(s)
+        self.logger.info(
+            f"Trained GP in {dt:.2f} s. Avg change: {np.mean(changes):.2%}"
+        )
+        self.hyperparameter_history[self.iter_counter] = new_params
+        # print('\n\n\n############################################################')
+
+    async def gp_loop(self) -> None:
+        """GP loop.
+
+        This loop is responsible for training the GP and asking for the next position.
+        """
+        self.iter_counter = 0
+        self.logger.info("Starting GP loop.")
+        await asyncio.sleep(1)  # wait a bit before starting
+        while not self._should_stop:
+            self.logger.debug("GP looping...")
+            if self.iter_counter > self.settings["scanning"]["max_points"]:
+                self.logger.info(
+                    f"Max number of iterations of {self.settings['scanning']['max_points']}"
+                    " reached. Ending scan."
+                )
+                self._should_stop = True
+            has_new_data = self.update_data_and_positions()
+            if has_new_data:
+                self.iter_counter += 1
+                self.logger.debug(
+                    f"GP iteration {self.iter_counter} | {len(self.positions)} samples"
+                )
+                if self.gp is None:
+                    self.init_gp()  # initialize GP at first iteration
+                else:
+                    retrain = False
+                    if self.iter_counter in self.settings["scanning"]["train_at"]:
+                        retrain = True
+                    elif (
+                        self.settings["scanning"]["train_every"] > 0
+                        and self.iter_counter % self.settings["scanning"]["train_every"]
+                        == 0
+                    ):
+                        retrain = True
+                    # f len(self.positions) in self.train_at:
+                    if retrain:
+                        self.train_gp()
+
+                    acq_func_callable = getattr(
+                        aquisition_functions,
+                        self.settings["acquisition_function"]["function"],
+                    )
+                    acq_func_params = self.settings["acquisition_function"]["params"]
+                    aqf = partial(acq_func_callable, **acq_func_params)
+
+                    ask_pars = self.settings["gp"]["ask"]
+                    all_positions = self.remote.all_positions
+                    visited_positions = np.unique(self.positions)
+                    missing_positions = np.setdiff1d(all_positions,visited_positions)
+                    self.logger.debug(
+                        f"Positions evaluated: {len(visited_positions)}/{len(all_positions)} | "
+                        f"{len(visited_positions)/len(all_positions):.2%}"
+                    )
+                    if len(missing_positions) == 0:
+                        self.logger.info(
+                            "No more positions to evaluate. Ending scan."
+                        )
+                        self._should_stop = True
+                        break
+                    
+                    answer = self.gp.ask(
+                        acquisition_function=aqf,
+                        x0 = missing_positions,
+                        **ask_pars
+                    )
+                    next_pos = answer["x"]
+                    # Remove once the correct points are passed to the ask function.
+                    # |<--
+                    try:
+                        pos_on_grid: Tuple[int] = closest_point_on_grid(
+                            next_pos, axes=self.remote.axes
+                        )
+                        self.logger.info(
+                            f"Next suggestesd position: {next_pos} rounded to {pos_on_grid}"
+                        )
+                        self.remote.ADD_POINT(*pos_on_grid)
+                    except ValueError:
+                        self.logger.error(
+                            f"Error comparing {next_pos} to previous positions to set it on grid. with axes {self.remote.axes}"
+                        )
+
+                    # -->|
+                    self.replot = True
+            else:
+                self.logger.debug("No data to update.")
+
+                await asyncio.sleep(0.2)
+
+        self.remote.END()
+
+    # plotting loop
+    async def plotting_loop(self) -> None:
+        """Plotting loop.
+
+        This loop is responsible for plotting the data.
+        """
+        self.logger.info("Starting plotting loop.")
+        await asyncio.sleep(1)  # wait a bit before starting
+
+        pass
+        self.logger.info("starting plotting tool loop")
         fig = None
         aqf = None
 
@@ -327,21 +551,22 @@ class AsyncScanManager:
             iteration += 1
             if self.replot:
                 self.replot = False
-                fig, aqf = plot_acqui_f(
+                fig, aqf = plot.plot_acqui_f(
                     gp=self.gp,
                     fig=fig,
                     pos=np.asarray(self.positions),
                     val=np.asarray(self.values),
-                    old_aqf = aqf,
+                    old_aqf=aqf,
                     last_spectrum=self.last_spectrum,
                 )
                 plt.pause(0.01)
             else:
-                await asyncio.sleep(.2)
+                await asyncio.sleep(0.2)
             # if fig is not None and iteration %100 == 0:
             #     fig.savefig(f'../results/{self.remote.filename.with_suffix("pdf").name}')
 
-    async def all_loops(self):
+    # all loops and initialization
+    async def all_loops(self) -> None:
         """
         Start all the loops.
         """
@@ -350,85 +575,45 @@ class AsyncScanManager:
         await asyncio.gather(
             # self.training_loop(),
             self.killer_loop(),
-            self.reduction_loop(),
             self.fetch_data_loop(),
+            self.reduction_loop(),
             self.gp_loop(),
             self.plotting_loop(),
         )
-        self.logger.info('All loops finished.')
+        self.logger.info("All loops finished.")
         self.remote.END()
 
-    async def start(self):
-        self.logger.info('Starting all loops.')
+    async def start(self) -> None:
+        """Initialize scan and start all loops."""
+        self.init_scan()
+
+        self.logger.info("Starting all loops.")
         self._should_stop = False
+
         await self.all_loops()
 
-    def stop(self):
-        self.logger.info('Stopping all loops.')
+    # stop and kill
+    def stop(self) -> None:
+        self.logger.info("Stopping all loops.")
         self.kill()
 
-    def kill(self):
-        self.logger.info('Killing all loops.')
+    def kill(self) -> None:
+        self.logger.info("Killing all loops.")
         self._should_stop = True
 
-    async def killer_loop(self,duration=None):
-        self.logger.info(f'Starting killer loop. Will kill process after {duration} seconds.')
+    async def killer_loop(self, duration=None) -> None:
+        self.logger.info(
+            f"Starting killer loop. Will kill process after {duration} seconds."
+        )
         if duration is None:
-            duration = self.duration
+            duration = self.settings["scanning"]["duration"]
         if duration is not None:
             await asyncio.sleep(duration)
-            self.logger.info('Killer loop strikes!.')
+            self.logger.info(
+                f"Killer loop strikes! Scan interrupted after {duration} seconds."
+            )
             self.stop()
-       
-
-if __name__ == '__main__':
-    print('Running asyncscanner...')
-    import os
-    # an unsafe, unsupported, undocumented workaround :
-    os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
-
-    import argparse
-    parser = argparse.ArgumentParser(description='AsyncScanManager')
-    parser.add_argument('--host', type=str, default='localhost', help='SGM4 host')
-    parser.add_argument('--port', type=int, default=54333, help='SGM4 port')
-    parser.add_argument('--loglevel', type=str, default='DEBUG', help='Log level')
-    parser.add_argument('--logdir', type=str, default='logs', help='Log directory')
-    parser.add_argument('--duration', type=int, default=None, help='Duration of the scan in seconds')
-    parser.add_argument('--train_at', type=int, nargs='+', default=[10,20,30,40,50,60,70,80,90,100,200,400,800], help='Train GP at these number of samples')
-    args = parser.parse_args()
 
 
-    import logging
-
-    # init logger
-    logger = logging.getLogger('async_scan_manager')
-    logger.setLevel(args.loglevel)
-    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s | %(message)s')
-    sh = logging.StreamHandler()
-    sh.setLevel(args.loglevel)
-    sh.setFormatter(formatter)
-    logger.addHandler(sh)
-
-    # fh = logging.FileHandler(os.path.join(args.logdir, args.logfile))
-    # fh.setLevel(args.loglevel)
-    # fh.setFormatter(formatter)
-    # logger.addHandler(fh)
-    print('init asyncscanner object')
-    # init scan manager
-    scan_manager = AsyncScanManager(
-        host=args.host,
-        port=args.port,
-        logger=logger,
-        train_at=args.train_at,
-        train_every=10,
-        duration = args.duration,
-        use_cost_function = True,
-        batch_normalize = True,
-    )
-
-    # start scan manager
-    loop = asyncio.get_event_loop()
-    loop.run_until_complete(scan_manager.start())
-    loop.close()
-    logger.info('Scan manager stopped.')
-
+if __name__ == "__main__":
+    pass

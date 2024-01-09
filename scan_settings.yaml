@@ -52,7 +52,7 @@ acquisition_function:
   params:
     a: 3.0 # exploration vs exploitation, i.e. variance weight
     weights: null
-    norm: 2 # normalization factor for acquisition function
+    norm: 1 # normalization factor for acquisition function
     c: 0 # covariance weight
 
 cost_function:
@@ -61,21 +61,19 @@ cost_function:
     speed: 300 # um/s
     dwell_time: 1 # seconds
     dead_time: 0.6 # seconds
-    weight: 0.01 # weight of the cost function
+    weight: 10 # weight of the cost function
 
 gp:
   optimizer:
-    input_space_dimension: 2 # number of input dimensions, e.g. x and y
-    output_space_dimension: 1 # UNCLEAR
-    output_number: 2 # number of tasks
+    output_space_dimension: 1 # just leave it at 1
 
   fvgp:
     init_hyperparameters: [1_000_000, 100, 100, 100]
-    compute_device: cpu # cpu or cuda:0
+    compute_device: gpu # cpu or cuda:0
     gp_kernel_function: null
     gp_mean_function: null
     use_inv: false
-    ram_economy: true
+    ram_economy: true # shouldnt really do anything without use_inv
 
   training:
     hyperparameter_bounds: [
@@ -95,5 +93,5 @@ gp:
     pop_size: 20 # population size for global optimization
     max_iter: 10 # maximum number of iterations for global optimization
     tol: 0.000001 # tolerance for global optimization
-    x0: null # positions where to evaluate the acquisition function
+    # x0: null # positions where to evaluate the acquisition function
 

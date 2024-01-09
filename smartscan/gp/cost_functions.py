@@ -1,4 +1,4 @@
-from typing import Callable, Sequence, Tuple
+from typing import Any, Callable, Sequence, Tuple
 import logging
 import numpy as np
 
@@ -100,3 +100,51 @@ def compute_costs(
     logger.debug(f"Costs computed: {cost}")
     return np.asarray(cost).T
 
+def manhattan_cost_function(
+        origin: np.ndarray[float],
+        x: Sequence[Tuple[float,float]],
+        cost_func_params: dict[str, Any] = None,
+    ) -> float:
+    """Compute the movement cost between two points
+
+    Args:
+        origin (Sequence[float]): origin point
+        x (Sequence[float]): destination point
+        cost_func_params (dict[str, Any], optional): cost function parameters. 
+            All parameters need to be passed in this dictionary because of the structure
+            imposed by gpCAM. Defaults to None, which means that the default parameters are:
+            - speed (float): 250 um/s
+            - dwell_time (float): 0.5 s
+            - dead_time (float): 0.6 s
+            - point_to_um (float): 1.0 um/point unit conversion factor
+    
+    Returns:
+        float: movement cost
+    """
+    origin = np.array(origin)
+    assert origin.shape[0] == 2, "origin must be a 2D point"
+
+    x = np.array(x)
+    if x.ndim == 1:
+        x = x.reshape(-1,1) # make sure x is a 2D array
+    assert x.shape[1] == 2, "x must be a 2D point or a list of 2D points"
+
+    # gather parameters
+    if cost_func_params is None:
+        cost_func_params = {}
+    else:
+        cost_func_params = cost_func_params.copy()
+    speed = cost_func_params.get('speed',250)
+    dwell_time = cost_func_params.get('dwell_time',0.5)
+    dead_time = cost_func_params.get('dead_time',0.6)
+    point_to_um = cost_func_params.get('point_to_um',1.0)
+    weight = cost_func_params.get('weight',1.0)
+
+    if any([k not in ['speed','dwell_time','dead_time','point_to_um','weight'] 
+            for k in cost_func_params.keys()]):
+        raise ValueError(f"Unrecognized parameters: {cost_func_params.keys()}")
+    times = np.zeros(x.shape[0])
+    for i in range(x.shape[0]):
+        distance = manhattan_distance(origin,x[i,:]) * point_to_um
+        times[i] = weight * distance / speed  + dwell_time + dead_time
+    return times

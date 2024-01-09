@@ -13,9 +13,8 @@ from tqdm.auto import trange, tqdm
 import h5py
 
 from smartscan.TCP import TCPServer
-from smartscan.file import SGM4FileManager
 
-from . import processing
+# from . import processing
 
 
 class VirtualSGM4(TCPServer):
@@ -120,6 +119,7 @@ class VirtualSGM4(TCPServer):
             self.starts = f.starts
             self.stops = f.stops
             self.steps = f.steps
+            self.step_sizes = []
             self.lengths = f.lengths
             self.positions = f.positions
             self.limits = f.limits
@@ -231,7 +231,7 @@ class VirtualSGM4(TCPServer):
         pos_ds = self.file["Entry/Data/ScanDetails/SetPositions"]
         pos_ds.resize((pos_ds.shape[0] + 1), axis=0)
         pos = list(pos)
-        pos[not changed] = -99999999. 
+        # pos[not changed] = -99999999. 
         pos_ds[-1,...] = pos
         pos_ds.flush()
         return pos, data
@@ -405,68 +405,27 @@ class VirtualSGM4(TCPServer):
         return f'ERROR {error}'
     
     def MEASURE(self) -> str:
-        # pos, data = self.measure()
-        pos_str =  ' '.join([str(v) for v in self.current_pos])
-        data_str = ' '.join([str(np.round(v,4).astype(np.float32)) for v in np.random.rand(640,400).ravel()])
-        time.sleep(np.random.rand(1)[0])
-        print()
+
+        pos, data = self.measure(changed = [False,False])
+
+        pos_str =  ' '.join([str(v) for v in pos])
+        data_str = ' '.join([str(np.round(v,4).astype(np.float32)) for v in data.ravel()])
+
+        # pos_str =  ' '.join([str(v) for v in self.current_pos])
+        # data_str = ' '.join([str(np.round(v,4).astype(np.float32)) for v in np.random.rand(640,400).ravel()])
+        # time.sleep(np.random.rand(1)[0])
+        # print()
         return f'MEASURE {len(self.current_pos)} {pos_str} {data_str}'
+
+    def SHAPE(self) -> str:
+        return f'SHAPE {self.signal_shape[0]} {self.signal_shape[1]}'
+
+    def STEP_SIZE(self) -> str:
+
+        return f'STEP_SIZE {" ".join([str(s) for s in self.steps])}'
 
     def __del__(self) -> None:
         self.close_file()
-
-
-class FileSGM4(SGM4FileManager, VirtualSGM4):
-
-    def __init__(
-            self, 
-            ip: str, 
-            port: int, 
-            filename: str | Path, 
-            verbose: bool = True, 
-            dwell_time: float = 0.1
-        ) -> None:
-        """ A virtual SGM4 that reads a file containing a list of points to scan.
-
-        Args:
-            ip (str): The IP address of the server.
-            port (int): The port of the server.
-            filename (str | Path): The file containing the points to scan.
-            verbose (bool, optional): Whether to print messages. Defaults to True.
-            dwell_time (float, optional): The time to wait at each point. Defaults to 0.1.
-        """
-        if filename is not None:
-            self.filename = Path(filename)
-            self.open()
-        else:
-            raise ValueError('filename cannot be None')
-
-        super().__init__(
-            ip = ip,
-            port = port,
-            ndim = self.ndim,
-            filename = self.filename,
-            limits = self.limits,
-            verbose = verbose,
-            dwell_time = dwell_time,
-        )
-        self.measured = []
-
-    async def measure(self, position: Sequence[float]) -> xr.DataArray:
-        """ Measure the specified point.
-        
-        Args:
-            position: The coordinates of the point to measure.
-            
-        Returns:
-            the spectrum measured at the specified point.
-        """
-        assert len(position) == self.ndim, f'Invalid number of attributes {len(position)}'
-        value = self.xdata.sel({self.dims[i]: position[i] for i in range(self.ndim)}).values
-        self.logger.info(f'Waiting for {self.dwell_time} seconds')
-        await asyncio.sleep(self.dwell_time)
-        self.measured.loc[{self.dims[i]: position[i] for i in range(self.ndim)}] = value
-        return value
 
 
 class SGM4FileManager:
@@ -583,7 +542,6 @@ class SGM4FileManager:
                 self._positions[index] = ds[index]
         return self._positions[index]
         
-
     def get_new_data(self,len_old_data: int) -> Tuple[np.ndarray]:
         """Get new data from file.
 
@@ -895,7 +853,6 @@ class SGM4FileManager:
         """
         return img /(self.beam_current[:, None, None] * self.dwell_time)
 
-
     def to_xarray(self) -> np.ndarray:
         """Unravel stack into an nD array."""
         raise NotImplementedError
@@ -915,7 +872,60 @@ class SGM4FileManager:
             assert axis.min() <= pos <= axis.max(), 'position is outside of limits'
             nearest.append(axis[np.argmin(np.abs(axis - pos))])
         return tuple(nearest)
-    
+   
+
+class FileSGM4(SGM4FileManager, VirtualSGM4):
+
+    def __init__(
+            self, 
+            ip: str, 
+            port: int, 
+            filename: str | Path, 
+            verbose: bool = True, 
+            dwell_time: float = 0.1
+        ) -> None:
+        """ A virtual SGM4 that reads a file containing a list of points to scan.
+
+        Args:
+            ip (str): The IP address of the server.
+            port (int): The port of the server.
+            filename (str | Path): The file containing the points to scan.
+            verbose (bool, optional): Whether to print messages. Defaults to True.
+            dwell_time (float, optional): The time to wait at each point. Defaults to 0.1.
+        """
+        if filename is not None:
+            self.filename = Path(filename)
+            self.open()
+        else:
+            raise ValueError('filename cannot be None')
+
+        super().__init__(
+            ip = ip,
+            port = port,
+            ndim = self.ndim,
+            filename = self.filename,
+            limits = self.limits,
+            verbose = verbose,
+            dwell_time = dwell_time,
+        )
+        self.measured = []
+
+    async def measure(self, position: Sequence[float]) -> xr.DataArray:
+        """ Measure the specified point.
+        
+        Args:
+            position: The coordinates of the point to measure.
+            
+        Returns:
+            the spectrum measured at the specified point.
+        """
+        assert len(position) == self.ndim, f'Invalid number of attributes {len(position)}'
+        value = self.xdata.sel({self.dims[i]: position[i] for i in range(self.ndim)}).values
+        self.logger.info(f'Waiting for {self.dwell_time} seconds')
+        await asyncio.sleep(self.dwell_time)
+        self.measured.loc[{self.dims[i]: position[i] for i in range(self.ndim)}] = value
+        return value
+
 
 if __name__ == '__main__':
 

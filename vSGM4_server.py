@@ -8,8 +8,9 @@ import logging
 if __name__ == '__main__':
 
     # source_file = r"D:\data\SGM4 - 2022 - CrSBr\data\Kiss05_15_1.h5"
-    source_file =  Path(r"D:\data\SGM4\SmartScan\Z006_46.h5")
-    source_file =  Path(r"D:\data\SGM4\SmartScan\Z006_35_0.h5")
+    # source_file =  Path(r"D:\data\SGM4\SmartScan\Z006_46.h5")
+    # source_file =  Path(r"D:\data\SGM4\SmartScan\Z006_35_0.h5")
+    source_file =  Path(r"F:\data\ARPESdatabase\maps\SGM4\Z006_35_0.h5")
 
     name = Path(source_file).stem
 
@@ -33,6 +34,7 @@ if __name__ == '__main__':
         'localhost', 
         54333, 
         verbose=True,
+        logger=logger,
     )
     vm.init_scan_from_file(filename=source_file)
     filedir = Path(

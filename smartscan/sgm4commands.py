@@ -3,6 +3,8 @@ import numpy as np
 from numpy.typing import NDArray
 from pathlib import Path
 
+from itertools import product
+
 from .TCP import send_tcp_message
 
 
@@ -92,6 +94,13 @@ class SGM4Commands:
         if self._spectrum_shape is None:
             self._spectrum_shape = self.SHAPE()
         return tuple(self._spectrum_shape)
+
+    @property
+    def all_positions(self) -> List[List[float]]:
+        """list of all positions in the scan"""
+        if self._all_positions is None:
+            self._all_positions = list(product(*self.axes))
+        return np.array(self._all_positions)
 
     @property
     def axes(self) -> List[List[float]]:

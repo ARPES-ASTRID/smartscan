@@ -345,7 +345,7 @@ class AsyncScanManager:
                     n_new += 1
                 except asyncio.QueueEmpty:
                     break
-            self.tell_gp()
+            # self.tell_gp()
             self.logger.info(
                 f"Updated data with {n_new} new points. Total: {len(self.positions)} last Pos {self.positions[-1]} {self.values[-1]}."
             )
@@ -454,10 +454,11 @@ class AsyncScanManager:
         self.logger.info("Starting GP loop.")
         await asyncio.sleep(1)  # wait a bit before starting
         while not self._ready_for_gp:
+            has_new_data = self.update_data_and_positions()
             if len(self.positions) > len(self.initial_points):
                 self._ready_for_gp = True
             else:
-                self.logger.debug("Waiting for data to be ready for GP.")
+                self.logger.debug(f"Waiting for data to be ready for GP. {len(self.positions)}/{len(self.initial_points)} ")
                 await asyncio.sleep(0.2)
             
 
@@ -479,6 +480,7 @@ class AsyncScanManager:
                 if self.gp is None:
                     self.init_gp()  # initialize GP at first iteration
                 else:
+                    self.tell_gp()
                     retrain = False
                     if self.iter_counter in self.settings["scanning"]["train_at"]:
                         retrain = True

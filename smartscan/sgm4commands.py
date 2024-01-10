@@ -104,7 +104,7 @@ class SGM4Commands:
                 self._axes.append(np.arange(start, stop, step))
         return self._axes
 
-    def send_command(self, command, *args) -> None:
+    def send_command(self, command, *args) -> str:
         """send a command to SGM4 and wait for a response
 
         Args:
@@ -170,7 +170,7 @@ class SGM4Commands:
         """disconnect from SGM4"""
         Warning("Disconnecting from SGM4 is not yet implemented")
 
-    def ADD_POINT(self, *args) -> None:
+    def ADD_POINT(self, *args) -> bool:
         """add a point to the scan queue
 
         Args:
@@ -196,7 +196,7 @@ class SGM4Commands:
             )
         return True
 
-    def CLEAR(self) -> None:
+    def CLEAR(self) -> bool:
         """clear the scan queue
 
         Returns:
@@ -304,7 +304,7 @@ class SGM4Commands:
         self._step_size = step_size
         return step_size
 
-    def END(self)-> Any:
+    def END(self)-> str:
         """End the scan after completeing the current queue
 
         Returns:
@@ -316,7 +316,7 @@ class SGM4Commands:
         assert len(split) == 2, f"Expected 2 args, got {len(split)}"
         return split[1]
 
-    def ABORT(self) -> Literal[True]:
+    def ABORT(self) -> bool:
         """Abort the scan
 
         Returns:

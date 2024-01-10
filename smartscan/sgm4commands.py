@@ -46,6 +46,9 @@ class SGM4Commands:
         self._axes = None
         self._ndim = None
         self._filename = None
+        self._current_pos = None
+        self._all_positions = None
+        
 
     @property
     def filename(self) -> Path:

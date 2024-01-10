@@ -1,11 +1,9 @@
-from typing import Callable, Sequence, Tuple, Union, List
-from tqdm.auto import tqdm
+from typing import Any, List, Literal, Tuple
 import numpy as np
-import time
+from numpy.typing import NDArray
 from pathlib import Path
 
-from .utils import manhattan_distance, closest_point_on_int_grid
-from .tcp import send_tcp_message
+from .TCP import send_tcp_message
 
 
 class SGM4Commands:
@@ -306,7 +304,7 @@ class SGM4Commands:
         self._step_size = step_size
         return step_size
 
-    def END(self):
+    def END(self)-> Any:
         """End the scan after completeing the current queue
 
         Returns:
@@ -318,7 +316,7 @@ class SGM4Commands:
         assert len(split) == 2, f"Expected 2 args, got {len(split)}"
         return split[1]
 
-    def ABORT(self):
+    def ABORT(self) -> Literal[True]:
         """Abort the scan
 
         Returns:
@@ -329,7 +327,7 @@ class SGM4Commands:
         # TODO: stop the measurement loop
         return True
 
-    def PAUSE(self):
+    def PAUSE(self) -> str:
         """Pause the scan
 
         Returns:
@@ -341,7 +339,7 @@ class SGM4Commands:
         self.status = split[1]
         return str(split[1])
 
-    def MEASURE(self):
+    def MEASURE(self) -> tuple[None, None] | tuple[NDArray[Any], NDArray[Any]]:
         """Measure the current position
 
         Returns:

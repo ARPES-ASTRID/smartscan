@@ -1,4 +1,4 @@
-from typing import Any, List, Literal, Tuple
+from typing import Any, List, Tuple
 import numpy as np
 from numpy.typing import NDArray
 from pathlib import Path

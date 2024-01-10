@@ -3,6 +3,7 @@ from asyncio.streams import StreamReader, StreamWriter
 import socket
 from abc import ABC, abstractmethod
 import hashlib
+import logging
 
 def calculate_checksum(message: str) -> str:
     """
@@ -52,6 +53,7 @@ def send_tcp_message(
         verbose:bool=False,
         timeout:float=1.0,
         CLRF:bool=True,
+        logger=None,
     ) -> str:
     """ send a message to a host and port and return the response
 
@@ -68,27 +70,24 @@ def send_tcp_message(
     Returns:
         data: response from host
     """
+    if logger is None:
+        logger = logging.getLogger('send_tcp_message')
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        if verbose:
-            print(f"Connecting to {host}:{port}")
+        logger.debug(f"TPC Connecting to {host}:{port}")
         s.connect((host, port))
         if checksum:
             msg = add_checksum(msg)
-            if verbose:
-                print(f"Sending message with checksum: {msg}")
+            logger.debug(f"TCP Sending message with checksum: {msg}")
         else:
-            if verbose:
-                print(f"Sending message: {msg}")
+            logger.debug(f" TCP Sending message: {msg}")
         if CLRF:
             msg += "\r\n"
         if len(msg) > buffer_size:
             raise ValueError(f'Message is too long. {len(msg)}/{buffer_size}')
         s.sendall(msg.encode())
-        if verbose:
-            print("Waiting for response")
+        logger.debug("Waiting for response")
         data = s.recv(buffer_size).decode()
-        if verbose:
-            print(f"Received: {data}")
+        logger.debug(f"Received: {data}")
         data = remove_checksum(data)
         
     return data.strip("\r\n")

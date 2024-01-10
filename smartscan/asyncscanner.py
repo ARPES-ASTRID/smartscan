@@ -126,6 +126,7 @@ class AsyncScanManager:
         # init GP
         self.gp = None
         self._should_stop: bool = False
+        self._ready_for_gp: bool = False
 
         # init data
         self.positions: List = []
@@ -137,6 +138,18 @@ class AsyncScanManager:
         # init plotting
         self.replot: bool = False
         self.last_spectrum = None
+
+        # scan initialization points
+        self.initial_points = [ # currently only the border
+            [0, 0],
+            [0, 0.5],
+            [0, 1],
+            [0.5, 1],
+            [1, 1],
+            [1, 0.5],
+            [1, 0],
+            [0.5, 0],
+        ]
 
         self.save_settings()
 
@@ -166,18 +179,7 @@ class AsyncScanManager:
         """Initialize the scan."""
         self.logger.info("Initializing scan.")
         # TODO: add this to settings and give more options
-        relative_points = [
-            [0, 0],
-            [0, 0.5],
-            [0, 1],
-            [0.5, 1],
-            [1, 1],
-            [1, 0.5],
-            [1, 0],
-            [0.5, 0],
-            [0.5, 0.5],
-        ]
-        for p in relative_points:
+        for p in self.initial_points:
             x = p[0] * self.remote.limits[0][1] + (1 - p[0]) * self.remote.limits[0][0]
             y = p[1] * self.remote.limits[1][1] + (1 - p[1]) * self.remote.limits[1][0]
             self.remote.ADD_POINT(x, y)
@@ -216,6 +218,7 @@ class AsyncScanManager:
             self.logger.info(f"Settings saved to {target}")
         else:
             self.logger.critical(f"FAILED TO SAVE SETTINGS TO {target}. File exists!!")
+    
     # get data from SGM4
     async def fetch_data(
         self,
@@ -272,7 +275,7 @@ class AsyncScanManager:
                 )
             else:
                 self.logger.debug("No data received.")
-                await asyncio.sleep(0.2)  # wait a bit before trying again
+                await asyncio.sleep(0.1)  # wait a bit before trying again
 
     # reduce data and update GP
     async def reduction_loop(self) -> None:
@@ -450,6 +453,15 @@ class AsyncScanManager:
         self.iter_counter = 0
         self.logger.info("Starting GP loop.")
         await asyncio.sleep(1)  # wait a bit before starting
+        while not self._ready_for_gp:
+            if len(self.positions) > len(self.initial_points):
+                self._ready_for_gp = True
+            else:
+                self.logger.debug("Waiting for data to be ready for GP.")
+                await asyncio.sleep(0.2)
+            
+
+        self.logger.info("Data ready for GP. Starting GP loop.")
         while not self._should_stop:
             self.logger.debug("GP looping...")
             if self.iter_counter > self.settings["scanning"]["max_points"]:
@@ -588,8 +600,9 @@ class AsyncScanManager:
         self.init_scan()
 
         self.logger.info("Starting all loops.")
+        self._ready_for_gp = False
         self._should_stop = False
-
+        
         await self.all_loops()
 
     # stop and kill

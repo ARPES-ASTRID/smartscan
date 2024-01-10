@@ -5,7 +5,7 @@ TCP:
   timeout: 10 # seconds
 
 logging:
-  level: DEBUG
+  level: INFO
   directory: null
   formatter: '%(asctime)s - %(name)s - %(levelname)s | %(message)s'
 
@@ -26,15 +26,15 @@ scanning:
 preprocessing: 
 # list of preprocessing functions to apply to the data. 
 # Functions are chained in the order they are listed.
-  reshape:
-    function: reshape 
-    params: 
-      shape: [500,500] # parameters of the function
+  # reshape:
+  #   function: reshape 
+  #   params: 
+  #     shape: [] # parameters of the function
   roi:
     function: roi # name of the function found in gp/preprocessing.py
     params: 
-      x_lim: [330,500] # parameters of the function  
-      y_lim: [20,380]
+      x_lim: [0,-1] # parameters of the function  
+      y_lim: [0,-1]
 
 tasks: # list of tasks to which to reduce the data
   mean: # name of the task found in gp/tasks.py
@@ -42,7 +42,9 @@ tasks: # list of tasks to which to reduce the data
     params: null # parameters of the function
   laplace_filter:
     function: laplace_filter
-    params: null
+    params:
+      sigma: 10
+      norm: true
   # signal_to_bg:
   #   function: signal_to_bg
   #   params: null
@@ -69,7 +71,7 @@ gp:
 
   fvgp:
     init_hyperparameters: [1_000_000, 100, 100, 100]
-    compute_device: gpu # cpu or cuda:0
+    compute_device: cpu # cpu or cuda:0
     gp_kernel_function: null
     gp_mean_function: null
     use_inv: false
@@ -93,5 +95,5 @@ gp:
     pop_size: 20 # population size for global optimization
     max_iter: 10 # maximum number of iterations for global optimization
     tol: 0.000001 # tolerance for global optimization
-    # x0: null # positions where to evaluate the acquisition function
+    # x0: all # positions where to evaluate the acquisition function
 

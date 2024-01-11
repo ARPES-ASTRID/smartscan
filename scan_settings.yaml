@@ -9,9 +9,6 @@ logging:
   directory: null
   formatter: '%(asctime)s - %(name)s - %(levelname)s | %(message)s'
 
-data:
-  shape: [500,500] # shape of the data
-
 paths:
   data: './data'
 
@@ -43,8 +40,8 @@ tasks: # list of tasks to which to reduce the data
   laplace_filter:
     function: laplace_filter
     params:
-      sigma: 10
-      norm: true
+      sigma: 5
+      norm: False
   # signal_to_bg:
   #   function: signal_to_bg
   #   params: null
@@ -63,7 +60,7 @@ cost_function:
     speed: 300 # um/s
     dwell_time: 1 # seconds
     dead_time: 0.6 # seconds
-    weight: 10 # weight of the cost function
+    weight: 0.1 # weight of the cost function
 
 gp:
   optimizer:

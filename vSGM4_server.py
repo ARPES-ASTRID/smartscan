@@ -4,45 +4,47 @@ import numpy as np
 from pathlib import Path
 import asyncio
 import logging
+import yaml
+
+from smartscan.utils import ColoredFormatter
+
+
 
 if __name__ == '__main__':
 
-    # source_file = r"D:\data\SGM4 - 2022 - CrSBr\data\Kiss05_15_1.h5"
-    # source_file =  Path(r"D:\data\SGM4\SmartScan\Z006_46.h5")
-    # source_file =  Path(r"D:\data\SGM4\SmartScan\Z006_35_0.h5")
-    source_file =  Path(r"D:\data\ARPESdatabase\maps\SGM4\Z006_35_0.h5")
+    with open('vSGM4 settings.yaml', 'r') as f:
+        settings = yaml.safe_load(f)
 
-    name = Path(source_file).stem
+    file_name = settings['data']['file_name']
+    data_dir = Path(settings['data']['data_dir'])
+    source_file = (data_dir / f'{file_name}').with_suffix('.h5')
+    assert source_file.exists(), f'File {source_file} does not exist!'
 
-        # init logger
+    # init logger
+
     logger = logging.getLogger('virtualSGM4')
-    logger.setLevel('DEBUG')
-    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s | %(message)s')
+    logger.setLevel(settings['logging']['level'].upper())
+    formatter = ColoredFormatter(settings['logging']['formatter'])
+
     sh = logging.StreamHandler()
-    sh.setLevel('DEBUG')
+    sh.setLevel(settings['logging']['level'].upper())
     sh.setFormatter(formatter)
     logger.addHandler(sh)
 
-    # fh = logging.FileHandler(os.path.join(args.logdir, args.logfile))
-    # fh.setLevel(args.loglevel)
-    # fh.setFormatter(formatter)
-    # logger.addHandler(fh)
-    logger.info('init VirtualSGM4 object')
-    # init scan manager
-
+    logger.info('Created logger.')
     vm = VirtualSGM4(
         'localhost', 
         54333, 
-        verbose=True,
         logger=logger,
+        simulate_times=settings['scan']['simulate_times'],
+        save_to_file=settings['scan']['save_to_file'],
     )
     vm.init_scan_from_file(filename=source_file)
-    filedir = Path(
-        r"C:\Users\stein\OneDrive\Documents\_Work\_code\ARPES-ASTRID\smartscan\data"
-        )
+    logger.info(f'Initialized scan from file {source_file}')
+    filedir = Path(settings['data']['target_dir'])
     i=0
     while True:
-        filename = filedir / f'{name}_virtual_{i:03.0f}.h5'
+        filename = filedir / f'{file_name}_virtual_{i:03.0f}.h5'
         if not filename.exists():
             break
         else:
@@ -53,8 +55,8 @@ if __name__ == '__main__':
         filename=filename
     )
 
-    vm.current_pos = np.mean(vm.limits[:2]), np.mean(vm.limits[2:])
-    print('set current pos to', vm.current_pos)
+    # vm.current_pos = np.mean(vm.limits[:2]), np.mean(vm.limits[2:])
+    # logger.info(f'Set current pos to center position: {vm.current_pos}')
 
     vm.run()
-    print('All done. Quitting...')
+    logger.info('All done. Quitting...')

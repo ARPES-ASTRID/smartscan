@@ -316,6 +316,16 @@ class SGM4Commands:
         self._step_size = step_size
         return step_size
 
+    def START(self) -> bool:
+        """Start the scan
+
+        Returns:
+            ack: START
+        """
+        response = self.send_command("START")
+        assert response == "START", f"Expected START, got {response}"
+        return True
+
     def END(self)-> str:
         """End the scan after completeing the current queue
 
@@ -326,6 +336,19 @@ class SGM4Commands:
         split = response.split(" ")
         assert split[0] == "END", f"Expected END, got {split[0]}"
         assert len(split) == 2, f"Expected 2 args, got {len(split)}"
+        return split[1]
+
+    def STATUS(self) -> str:
+        """Get the status of the scan
+
+        Returns:
+            status: status of the scan
+        """
+        response = self.send_command("STATUS")
+        split = response.split(" ")
+        assert split[0] == "STATUS", f"Expected STATUS, got {split[0]}"
+        assert len(split) == 2, f"Expected 2 args, got {len(split)}"
+        self.status = split[1]
         return split[1]
 
     def ABORT(self) -> bool:

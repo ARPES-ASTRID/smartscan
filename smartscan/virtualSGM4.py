@@ -7,14 +7,12 @@ import logging
 
 import numpy as np
 import xarray as xr
-# import dataloader as dl
 from tqdm.auto import trange, tqdm
 
 import h5py
 
 from smartscan.TCP import TCPServer
-
-# from . import processing
+import smartscan.tasks as processing
 
 
 class VirtualSGM4(TCPServer):
@@ -29,21 +27,24 @@ class VirtualSGM4(TCPServer):
             source_file: Union[str, Path] = None,
             limits: List[Tuple[float]] = None,
             step_size: Sequence[float] = None,
-            verbose: bool = True,
             buffer_size:int = 1024*1024*8,
             dwell_time: float = 1,
+            simulate_times: bool = False,
+            save_to_file: bool = True,
             logger=None,
     ) -> None:
         super().__init__(ip, port)
-        self.logger = logger or logging.getLogger(__name__)
+        self.logger = logger or logging.getLogger(f"{__name__}.VirtualSGM4")
         self.logger.info('init VirtualSGM4 object')
         self.queue = []
         self.status = 'IDLE' # TODO: implement status
         if source_file is not None:
             self.init_scan_from_file(source_file)
         elif limits is not None and step_size is not None:
-            self.init_scan(ndim, limits, step_size, verbose, dwell_time)
+            self.init_scan(ndim, limits, step_size, dwell_time)
         self.file = None
+        self.simulate_times = simulate_times
+        self.save_to_file = save_to_file
 
     def init_scan(
             self,
@@ -92,7 +93,6 @@ class VirtualSGM4(TCPServer):
         self.map_shape = [len(c) for c in self.coords.values()]
         self.signal_shape = [500,500]
         self.dwell_time = dwell_time + 0.6
-        self.verbose = verbose
         self.current_pos = [c[l//2] for c, l in zip(self.coords.values(), self.map_shape)]
         self.positions = list(zip(*[c.ravel() for c in np.meshgrid(*self.coords.values())]))
 
@@ -114,7 +114,6 @@ class VirtualSGM4(TCPServer):
             self.axes = f.axes
             self.map_shape = f.map_shape
             self.signal_shape = f.file['Entry/Data/TransformedData'].shape[1:]
-            self.verbose = False
             self.dwell_time = f.dwell_time
             self.starts = f.starts
             self.stops = f.stops
@@ -151,15 +150,19 @@ class VirtualSGM4(TCPServer):
         Returns:
             data: Data at the given position.
         """
+        t0 = time.time()
         assert len(position) == self.ndim, f'Position {position} has wrong dimension.'
         pos = self.nearest_position_on_grid(position)
         if self.source_file is not None:
             with self.source_file as f:
                 poslist = [tuple(p) for p in self.positions]
                 index = poslist.index(pos)
-                return pos, f.file['Entry/Data/TransformedData'][index]
+                data = f.file['Entry/Data/TransformedData'][index]
+                self.logger.debug('reading data from file took {:.3f} seconds'.format(time.time()-t0))
         else:
-            return pos, np.random.rand(*self.signal_shape)
+            data = np.random.rand(*self.signal_shape)
+            self.logger.debug('Generating fake data took {:.3f} seconds'.format(time.time()-t0))
+        return pos, data
 
     def create_file(
             self,
@@ -224,44 +227,29 @@ class VirtualSGM4(TCPServer):
 
         self.logger.debug(f'Measuring position {self.current_pos}, changed {changed}')
         pos, data = self.read_data(self.current_pos)
+        if self.save_to_file:
+            self.write_data(pos, data)
+        return pos, data
+
+    def write_data(self, position: Tuple[float], data: np.ndarray) -> None:
+        """ Write data to the file.
+
+        Args:
+            position (Tuple[float]): _description_
+            data (np.ndarray): _description_
+        """
+        t0 = time.time()
         data_ds = self.file["Entry/Data/TransformedData"]
         data_ds.resize((data_ds.shape[0] + 1),axis=0)
         data_ds[-1,...] = data
         data_ds.flush()
         pos_ds = self.file["Entry/Data/ScanDetails/SetPositions"]
         pos_ds.resize((pos_ds.shape[0] + 1), axis=0)
-        pos = list(pos)
+        pos = list(position)
         # pos[not changed] = -99999999. 
         pos_ds[-1,...] = pos
         pos_ds.flush()
-        return pos, data
-
-    async def go_to_position(self, position: Sequence[float]) -> None:
-        """ Move to the specified position.
-
-        Args:
-            attrs: List of coordinates of each axis to move to.
-        """
-        assert len(position) == self.ndim, f'Invalid number of attributes {len(position)}'
-        old_pos = self.current_pos.copy()
-        t0 = time.time()
-        for i in range(self.ndim):
-            await self.move_axis(i, position[i])
-        self.logging.debug('moving from {} to {} took {:.3f} seconds'.format(old_pos, position, time.time()-t0))
-
-    async def move_axis(self, axis: int, target: float) -> None:
-        """ Move the specified axis to the specified target position.
-
-        Args:
-            axis: The axis to move.
-            target: The target position.
-        """
-        assert axis in range(self.ndim), f'Invalid axis {axis}'
-        if not self.position_is_allowed(axis, target):
-            self.logger.warning(f'Invalid target {target} for axis {axis}')
-        delay = max(0.05,abs(target - self.current_pos[axis]) / self.MOTOR_SPEED)
-        await asyncio.sleep(delay)
-        self.current_pos[axis] = target
+        self.logger.debug('writing data to file took {:.3f} seconds'.format(time.time()-t0))
 
     async def scan_loop(self) -> None:
         """
@@ -273,8 +261,21 @@ class VirtualSGM4(TCPServer):
         Otherwise, it waits for new points to be added to the queue.
         """
         self.logger.info('Starting scan...')
+        self.logger.info('Scan initialized, waiting for start command...')
+        while True:
+            if self.status != 'IDLE':
+                self.logger.info('Scan started!')
+                break
+            await asyncio.sleep(0.1)   
+        self.logger.debug('Freezing server for ~2 sec...')
+        time.sleep(2) # yes, this should freeze the server for 2 seconds
+        self.logger.info('Server Ready!')
+        self.status = 'ready'
+        
         self.wait_at_queue_empty = True
-        self.current_pos = [np.mean(l) for l in self.limits]
+        # self.current_pos = [np.mean(l) for l in self.limits]
+             
+
         while True:
             if len(self.queue) == 0:
                 if not self.wait_at_queue_empty:
@@ -287,14 +288,18 @@ class VirtualSGM4(TCPServer):
                 next_pos = self.queue.pop(0)
                 # manhattan distance:
                 distance = sum([abs(next_pos[i] - self.current_pos[i]) for i in range(self.ndim)])
-                self.logger.debug(f'Moving to {next_pos}. takes {distance/self.MOTOR_SPEED:.2f} seconds')
-                delay = max(0.05, distance / self.MOTOR_SPEED)
-                await asyncio.sleep(delay)
+                travel_time = distance / self.MOTOR_SPEED
+                self.logger.info(f'Moving to {next_pos}. takes {travel_time:.2f} seconds')
+                if self.simulate_times:
+                    await asyncio.sleep(travel_time)
+                else:
+                    await asyncio.sleep(0.05)
                 changed = [new != old for new, old in zip(next_pos, self.current_pos)]
                 self.current_pos = next_pos
                 # await self.go_to_position(next_pos)
             _ = self.measure(changed)
-            await asyncio.sleep(self.dwell_time)
+            if self.simulate_times:
+                await asyncio.sleep(self.dwell_time)
 
         self.logger.info('Scan finished')
         self.source_file.close()
@@ -331,7 +336,7 @@ class VirtualSGM4(TCPServer):
         Returns:
             str: The response to send to the client.    
         """
-        f'Received message "{message}"\n'
+        # f'Received message "{message}"\n'
         msg = message.strip('\r\n').split(' ')
         try:
             attr = getattr(self, msg[0])
@@ -340,15 +345,13 @@ class VirtualSGM4(TCPServer):
 
             else:
                 answer = attr()
-        # except AttributeError:
-        #     answer = f'INVALID_COMMAND {msg[0]}'
         except Exception as e:
             answer = f'ERROR {type(e).__name__} {e}'
             raise e
         finally:
             truncated_message = message[:50] + '...' if len(message) > 50 else message
             truncated_answer = answer[:50] + '...' if len(answer) > 50 else answer
-            self.logger.info(f'Received message "{truncated_message}", answer "{truncated_answer}"')
+            # self.logger.debug(f'Received message "{truncated_message.strip('\n')}", answer "{truncated_answer.strip('\n')}"')
             return answer
 
     def ADD_POINT(self, *args) -> str:
@@ -366,6 +369,10 @@ class VirtualSGM4(TCPServer):
         self.status = 'SCANNING'
         return f'SCAN'    
     
+    def START(self) -> str:
+        self.status = 'READY'
+        return f'START'
+
     def END(self) -> str:
         self.wait_at_queue_empty = False
         return f'END {len(self.queue)}'
@@ -423,6 +430,8 @@ class VirtualSGM4(TCPServer):
     def STEP_SIZE(self) -> str:
 
         return f'STEP_SIZE {" ".join([str(s) for s in self.steps])}'
+
+
 
     def __del__(self) -> None:
         self.close_file()
@@ -555,10 +564,10 @@ class SGM4FileManager:
             return None,None
         else:
             new = len(self) - len_old_data
-            print(f'found {new} spectra')
+            self.logger.debug(f'found {new} spectra')
             positions = self.get_positions(slice(-new,None,None))
             data = self.get_last_n_spectra(new)#get_data(slice(-new,None,None))
-            print(f'data shape {data.shape}')
+            self.logger.debug(f'data shape {data.shape}')
             return positions, data
         
     def get_last_n_spectra(self,n):
@@ -928,70 +937,4 @@ class FileSGM4(SGM4FileManager, VirtualSGM4):
 
 
 if __name__ == '__main__':
-
-    # test file loader 
-    test_data = "D:\data\SGM4 - example\Testing\Controller_9.h5"
-    with SGM4FileManager(test_data) as reader:
-        print(f'spectra shape {reader.spectra.shape}\n')
-        print(f'ndim {reader.ndim}\n')
-        print(f'limits {reader.limits}\n')
-        print(f'axes {reader.axes}\n')
-        print(f'dims {reader.dims}\n')
-        print(f'coords {reader.coords}\n')
-        print(f'spectra_dims {reader.spectra_dims}\n')
-        print(f'spectra_shape {reader.spectra_shape}\n')
-        print(f'positions {reader.positions.shape}\n')
-        print(f'positions {reader.positions[:,:10]}\n')
-
-
-
-    # source_file = r"D:\data\SGM4 - 2022 - CrSBr\data\Kiss05_15_1.h5"
-    source_file =  Path(r"D:\data\SGM4\SmartScan\Z006_46.h5")
-    source_file =  Path(r"D:\data\SGM4\SmartScan\Z006_35_0.h5")
-
-    name = Path(source_file).stem
-
-        # init logger
-    logger = logging.getLogger('virtualSGM4')
-    logger.setLevel('DEBUG')
-    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s | %(message)s')
-    sh = logging.StreamHandler()
-    sh.setLevel('DEBUG')
-    sh.setFormatter(formatter)
-    logger.addHandler(sh)
-
-    # fh = logging.FileHandler(os.path.join(args.logdir, args.logfile))
-    # fh.setLevel(args.loglevel)
-    # fh.setFormatter(formatter)
-    # logger.addHandler(fh)
-    logger.info('Intialized Logger')
-    # init scan manager
-
-    vm = VirtualSGM4(
-        'localhost', 
-        54333, 
-        verbose=True,
-        logger=logger,
-    )
-    vm.init_scan_from_file(filename=source_file)
-    filedir = Path(
-        r"C:\Users\stein\OneDrive\Documents\_Work\_code\ARPES-ASTRID\smartscan\data"
-        )
-    i=0
-    while True:
-        filename = filedir / f'{name}_virtual_{i:03.0f}.h5'
-        if not filename.exists():
-            break
-        else:
-            i += 1
-    
-    vm.create_file(
-        mode='x',
-        filename=filename
-    )
-
-    vm.current_pos = np.mean(vm.limits[:2]), np.mean(vm.limits[2:])
-    print('set current pos to', vm.current_pos)
-
-    vm.run()
-    print('All done. Quitting...')
+    pass

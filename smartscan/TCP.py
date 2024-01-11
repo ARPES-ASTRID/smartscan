@@ -101,28 +101,16 @@ class TCPServer:
             host: str, 
             port: int, 
             checksum: bool = False, 
-            verbose: bool = True,
             timeout: float = 0.1,
             message_size: int = 1024*1024*16,
+            logger: logging.Logger = None,
             ) -> None:
-        self.verbose = verbose
+        self.logger = logger or logging.getLogger('TCPServer')
         self.checksum = checksum
         self.host = host
         self.port = port
         self.server = None
         self.message_size = message_size
-
-    def log(self, message: str, end='\n') -> None:
-        """
-        Print a message to the console.
-
-        Args:
-            message (str): The message to print.
-        """
-        if self.logger is not None:
-            self.logger.info(message)
-        elif self.verbose:
-            print(message,end=end)
 
     async def handle_client(self, reader: StreamReader, writer: StreamWriter):
         """
@@ -133,7 +121,7 @@ class TCPServer:
             writer (StreamWriter): The writer object for sending data to the client.
         """
         client_address = writer.get_extra_info('peername')
-        self.log(f'New connection from {client_address}')
+        self.logger.debug(f'New connection from {client_address}')
 
         while True:
             data = await reader.read(self.message_size) 
@@ -144,20 +132,20 @@ class TCPServer:
                 message, recieved_checksum = data.decode('utf-8').split('||')
                 calculated_checksum = calculate_checksum(data.decode('utf-8'))
                 if recieved_checksum != calculated_checksum:
-                    self.log(f'Checksum mismatch: {recieved_checksum} != {calculated_checksum}')
+                    self.logger.error(f'Checksum mismatch: {recieved_checksum} != {calculated_checksum}')
                     continue
             elif self.checksum:
-                self.log('No checksum found')
+                self.logger.error('No checksum found')
                 continue
             else:
                 message = data.decode('utf-8')
-            self.log(f'Received message: {message}')
+            self.logger.debug(f'Received message: {message}')
             response = self.parse_message(message)
             # Send a response
             writer.write(response.encode('utf-8'))
             await writer.drain()
 
-        self.log(f'Connection from {client_address} closed')
+        self.logger.debug(f'Connection from {client_address} closed')
         writer.close()
 
     @abstractmethod
@@ -171,8 +159,8 @@ class TCPServer:
         Returns:
             str: The response to send to the client.
         """
-        response = f'Received message "{message}"\n'
-        self.log(response, end='')
+        response = f'parsed message "{message[:15]}...{message[-15:]}"'
+        self.logger.debug(response, end='')
         return response
         
     async def tcp_loop(self):
@@ -182,7 +170,7 @@ class TCPServer:
         self.server = await asyncio.start_server(
             self.handle_client, self.host, self.port)
 
-        print(f'TCP server is listening on {self.host}:{self.port}...')
+        self.logger.info(f'TCP server is listening on {self.host}:{self.port}...')
 
         async with self.server:
             await self.server.serve_forever()
@@ -267,10 +255,10 @@ class TCPClient:
             message, recieved_checksum = data.decode('utf-8').split('||')
             calculated_checksum = calculate_checksum(data.decode('utf-8'))
             if recieved_checksum != calculated_checksum:
-                self.log(f'Checksum mismatch: {recieved_checksum} != {calculated_checksum}')
+                self.logger.error(f'Checksum mismatch: {recieved_checksum} != {calculated_checksum}')
                 return None
         elif self.checksum:
-            self.log('No checksum found')
+            self.logger.error('No checksum found')
             return None
         else:
             message = data.decode('utf-8')
@@ -292,19 +280,4 @@ class TCPClient:
 if __name__ == '__main__':
     server = TCPServer('localhost', 12345)
     server.run()
-    # # add user inputs when running in console
-    # import argparse
-    # parser = argparse.ArgumentParser()
-    # parser.add_argument('--host', type=str, default='localhost')
-    # parser.add_argument('--port', type=int, default=12345)
-    # parser.add_argument('--ndim', type=int, default=3)
-    # parser.add_argument('--verbose', action='store_true')
-    # parser.add_argument('--message', type=str, default='END')
-    # args = parser.parse_args()
 
-
-    # client = TCPClient(args.host, args.port)
-    # asyncio.run(client.connect())
-    # asyncio.run(client.send_message(args.message))
-    # message = asyncio.run(client.receive_message())
-    # print(f'Received message: {message}')

@@ -180,6 +180,19 @@ class AsyncScanManager:
         """Initialize the scan."""
         self.logger.info(f"Initializing scan. with {len(self.relative_inital_points)} points.")
         # TODO: add this to settings and give more options
+        self.remote.START()
+        while True:
+            try:
+                s = self.remote.STATUS()
+                break
+            except Exception as e:
+                self.logger.error(f"Error setting up scan: {e}")
+                self.logger.info("Trying again in 1 second...")
+                time.sleep(1)
+        self.logger.info(f"Scan initialized. Status: {s}")
+        if status := self.remote.STATUS() != "READY":
+            raise RuntimeError(f"Scan not ready. Status: {status}")
+
         for p in self.relative_inital_points:
             x = p[0] * self.remote.limits[0][1] + (1 - p[0]) * self.remote.limits[0][0]
             y = p[1] * self.remote.limits[1][1] + (1 - p[1]) * self.remote.limits[1][0]

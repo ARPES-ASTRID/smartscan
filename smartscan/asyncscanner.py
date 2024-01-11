@@ -67,10 +67,10 @@ class AsyncScanManager:
         - [ ] Add a method to save the data.
         - [x] Add a method to save the settings.
         - [ ] Add a method to save the hyperparameters history.
+        - [ ] Check why ask is returning points out of the grid
         - [ ] improve the plotting.
         - [ ] add interactive control of the scan.
         - [ ] move initialization points to the settings file.
-        - [ ] get waiting time for initialization points from sgm4 or settings.
         - [ ] add aks for multiple points.
         
 

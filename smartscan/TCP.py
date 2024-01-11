@@ -79,15 +79,16 @@ def send_tcp_message(
             msg = add_checksum(msg)
             logger.debug(f"TCP Sending message with checksum: {msg}")
         else:
-            logger.debug(f" TCP Sending message: {msg}")
+            logger.debug(f"TCP Sending message: {msg}")
         if CLRF:
             msg += "\r\n"
         if len(msg) > buffer_size:
             raise ValueError(f'Message is too long. {len(msg)}/{buffer_size}')
         s.sendall(msg.encode())
-        logger.debug("Waiting for response")
+        logger.debug("TCP Waiting for response")
         data = s.recv(buffer_size).decode()
-        logger.debug(f"Received: {data}")
+        datastr = data[:30] + '...' if len(data) > 30 else data
+        logger.debug(f"TCP Received: {datastr}")
         data = remove_checksum(data)
         
     return data.strip("\r\n")

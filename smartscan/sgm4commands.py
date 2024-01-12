@@ -277,7 +277,7 @@ class SGM4Commands:
         response = self.send_command("FILENAME")
         split = response.split(" ")
         assert split[0] == "FILENAME", f"Expected FILENAME, got {split[0]}"
-        self._filename = split[1]
+        self._filename = " ".join(split[1:])
         return self._filename
 
     def CURRENT_POS(self) -> List[float]:

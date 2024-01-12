@@ -110,13 +110,6 @@ class AsyncScanManager:
             self.settings["TCP"]["port"],
             buffer_size=self.settings["TCP"]["buffer_size"],
         )
-        self.remote.connect()
-        if len(self.remote.axes[0]) == 0:
-            raise ValueError("failed initializing axes!!")
-        else:
-            self.logger.info(
-                f"Axes: {[a.shape for a in self.remote.axes]} | Limits: {self.remote.limits} | Step size: {self.remote.step_size} "
-            )
 
         # init queues
         self._raw_data_queue: asyncio.Queue = asyncio.Queue()
@@ -150,7 +143,6 @@ class AsyncScanManager:
             [0.5, 0],
         ]
 
-        self.save_settings()
 
     @property
     def val_array(self) -> NDArray[Any]:
@@ -192,12 +184,24 @@ class AsyncScanManager:
         self.logger.info(f"Scan initialized. Status: {s}")
         if status := self.remote.STATUS() != "READY":
             raise RuntimeError(f"Scan not ready. Status: {status}")
+        self.connect()
+        self.save_settings()
 
         for p in self.relative_inital_points:
             x = p[0] * self.remote.limits[0][1] + (1 - p[0]) * self.remote.limits[0][0]
             y = p[1] * self.remote.limits[1][1] + (1 - p[1]) * self.remote.limits[1][0]
             self.remote.ADD_POINT(x, y)
             self.logger.debug(f"Added point {p} to scan.")
+
+    def connect(self) -> None:
+        self.remote.connect()
+        if len(self.remote.axes[0]) == 0:
+            raise ValueError("failed initializing axes!!")
+        else:
+            self.logger.info(
+                f"Axes: {[a.shape for a in self.remote.axes]} | Limits: {self.remote.limits} | Step size: {self.remote.step_size} "
+            )
+        
 
     def save_settings(
         self,
@@ -652,6 +656,14 @@ class AsyncScanManager:
                 f"Killer loop strikes! Scan interrupted after {duration} seconds."
             )
             self.stop()
+
+    def __del__(self):
+        try:
+            self.logger.error("Deleted instance. scan stopping")
+            self.remote.END()
+        except:
+            self.logger.error("Deleted instance, but there was no scan to stop")
+
 
 
 if __name__ == "__main__":

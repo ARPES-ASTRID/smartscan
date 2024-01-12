@@ -70,7 +70,11 @@ if __name__ == "__main__":
     scan_manager = AsyncScanManager(settings=parsed_args.settings, logger=logger)
 
     # start scan manager
-    loop = asyncio.get_event_loop()
-    loop.run_until_complete(scan_manager.start())
+    try:
+        loop = asyncio.get_event_loop()
+        loop.run_until_complete(scan_manager.start())
+    except KeyboardInterrupt:
+        scan_manager.remote.END()
+        logger.error('Terminated scan from keyboard')
     loop.close()
     logger.info("Scan manager stopped.")

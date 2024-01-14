@@ -1,11 +1,11 @@
-from typing import Callable, Sequence, Tuple, Union, List
-from tqdm.auto import tqdm
+from typing import Any, List, Tuple
 import numpy as np
-import time
+from numpy.typing import NDArray
 from pathlib import Path
 
-from .utils import manhattan_distance, closest_point_on_int_grid
-from .tcp import send_tcp_message
+from itertools import product
+
+from .TCP import send_tcp_message
 
 
 class SGM4Commands:
@@ -46,6 +46,9 @@ class SGM4Commands:
         self._axes = None
         self._ndim = None
         self._filename = None
+        self._current_pos = None
+        self._all_positions = None
+        
 
     @property
     def filename(self) -> Path:
@@ -96,6 +99,13 @@ class SGM4Commands:
         return tuple(self._spectrum_shape)
 
     @property
+    def all_positions(self) -> List[List[float]]:
+        """list of all positions in the scan"""
+        if self._all_positions is None:
+            self._all_positions = list(product(*self.axes))
+        return np.array(self._all_positions)
+
+    @property
     def axes(self) -> List[List[float]]:
         """axes of the scan"""
         if self._axes is None:
@@ -106,7 +116,7 @@ class SGM4Commands:
                 self._axes.append(np.arange(start, stop, step))
         return self._axes
 
-    def send_command(self, command, *args) -> None:
+    def send_command(self, command, *args) -> str:
         """send a command to SGM4 and wait for a response
 
         Args:
@@ -172,7 +182,7 @@ class SGM4Commands:
         """disconnect from SGM4"""
         Warning("Disconnecting from SGM4 is not yet implemented")
 
-    def ADD_POINT(self, *args) -> None:
+    def ADD_POINT(self, *args) -> bool:
         """add a point to the scan queue
 
         Args:
@@ -198,7 +208,7 @@ class SGM4Commands:
             )
         return True
 
-    def CLEAR(self) -> None:
+    def CLEAR(self) -> bool:
         """clear the scan queue
 
         Returns:
@@ -267,7 +277,7 @@ class SGM4Commands:
         response = self.send_command("FILENAME")
         split = response.split(" ")
         assert split[0] == "FILENAME", f"Expected FILENAME, got {split[0]}"
-        self._filename = split[1]
+        self._filename = " ".join(split[1:])
         return self._filename
 
     def CURRENT_POS(self) -> List[float]:
@@ -306,7 +316,17 @@ class SGM4Commands:
         self._step_size = step_size
         return step_size
 
-    def END(self):
+    def START(self) -> bool:
+        """Start the scan
+
+        Returns:
+            ack: START
+        """
+        response = self.send_command("START")
+        assert response == "START", f"Expected START, got {response}"
+        return True
+
+    def END(self)-> str:
         """End the scan after completeing the current queue
 
         Returns:
@@ -318,7 +338,20 @@ class SGM4Commands:
         assert len(split) == 2, f"Expected 2 args, got {len(split)}"
         return split[1]
 
-    def ABORT(self):
+    def STATUS(self) -> str:
+        """Get the status of the scan
+
+        Returns:
+            status: status of the scan
+        """
+        response = self.send_command("STATUS")
+        split = response.split(" ")
+        assert split[0] == "STATUS", f"Expected STATUS, got {split[0]}"
+        assert len(split) == 2, f"Expected 2 args, got {len(split)}"
+        self.status = split[1]
+        return split[1]
+
+    def ABORT(self) -> bool:
         """Abort the scan
 
         Returns:
@@ -329,7 +362,7 @@ class SGM4Commands:
         # TODO: stop the measurement loop
         return True
 
-    def PAUSE(self):
+    def PAUSE(self) -> str:
         """Pause the scan
 
         Returns:
@@ -341,7 +374,7 @@ class SGM4Commands:
         self.status = split[1]
         return str(split[1])
 
-    def MEASURE(self):
+    def MEASURE(self) -> tuple[None, None] | tuple[NDArray[Any], NDArray[Any]]:
         """Measure the current position
 
         Returns:

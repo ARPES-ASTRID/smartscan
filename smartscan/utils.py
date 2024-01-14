@@ -1,6 +1,7 @@
 from typing import Counter, Callable, Tuple, Sequence
 from itertools import product
 import numpy as np
+import logging
 
 def pretty_print_time(t: float) -> str:
     """Print time as hh:mm:ss"""
@@ -49,3 +50,35 @@ def duplicate_positions(positions: Sequence[Tuple[float]]) -> dict[tuple[float],
     """ a dict with the number of repetitions of each position when the repetition is > 1"""
     counts = dict(Counter(tuple(map(tuple,positions))))
     return {k:v for k,v in counts.items() if v > 1}
+
+class ColoredFormatter(logging.Formatter):
+    """ A colorful formatter.
+    
+    modified from https://stackoverflow.com/questions/384076/how-can-i-color-python-logging-output
+    
+    """
+    grey = "\x1b[38;20m"
+    white = "\x1b[37;20m"
+    yellow = "\x1b[33;20m"
+    red = "\x1b[31;20m"
+    bold_red = "\x1b[31;1m"
+    reset = "\x1b[0m"
+
+    def __init__(
+            self, 
+            fmt="%(asctime)s - %(name)s - %(levelname)s - %(message)s (%(filename)s:%(lineno)d)"
+        ) -> None:
+        self.fmt = fmt
+        self.FORMATS = {
+            logging.DEBUG: self.grey + fmt + self.reset,
+            logging.INFO: self.white + fmt + self.reset,
+            logging.WARNING: self.yellow + fmt + self.reset,
+            logging.ERROR: self.red + fmt + self.reset,
+            logging.CRITICAL: self.bold_red + fmt + self.reset
+        }
+        
+
+    def format(self, record) -> str:
+        log_fmt = self.FORMATS.get(record.levelno)
+        formatter = logging.Formatter(log_fmt)
+        return formatter.format(record)

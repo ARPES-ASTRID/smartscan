@@ -1,3 +1,16 @@
+import logging
+import time
+from functools import partial
+
+from PyQt5 import QtCore
+import numpy as np
+from fvgp import fvGPOptimizer
+
+from smartscan.utils import pretty_print_time
+import smartscan.gp.aquisition_functions as aquisition_functions
+import smartscan.gp.cost_functions as cost_functions
+
+
 
 class GPManager(QtCore.QObject):
     """ Manager for the graphic interface of the SmartScan program

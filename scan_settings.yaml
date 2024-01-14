@@ -12,6 +12,11 @@ logging:
 paths:
   data: './data'
 
+timers: # in milliseconds
+  master: 50
+  fetch_data: 50
+  process_data: 50
+
 scanning:
   max_points: 499 # 0 for unlimited
   duration: 1_000_000

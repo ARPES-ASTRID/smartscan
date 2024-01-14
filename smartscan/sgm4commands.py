@@ -393,7 +393,8 @@ class SGM4Commands:
                 n_pos = int(vals[0])
                 pos = np.asarray(vals[1 : n_pos + 1], dtype=float)
                 data = np.asarray(vals[n_pos + 1 :], dtype=float)
-                # data = data.reshape(640,400)
+                if self.spectrum_shape is not None:
+                    data = data.reshape(self.spectrum_shape)
                 return pos, data
             case _:
                 self.logger.warning(f"Unknown message code: {msg_code}")

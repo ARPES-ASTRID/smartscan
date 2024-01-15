@@ -55,7 +55,7 @@ acquisition_function:
     c: 0 # covariance weight
 
 cost_function:
-  function: manhattan_cost_function # name of the function found in gp/cost_functions.py
+  function: manhattan_avoid_repetition # name of the function found in gp/cost_functions.py
   params: 
     speed: 300 # um/s
     dwell_time: 1 # seconds

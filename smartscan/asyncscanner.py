@@ -19,22 +19,6 @@ import matplotlib.pyplot as plt
 
 from gpcam.gp_optimizer import fvGPOptimizer
 
-# import matplotlib.pyplot as plt
-
-PathLike: object = Union[str, Path]
-
-
-class Logger:
-    def __init__(self) -> None:
-        self.info: Callable = print
-        self.debug: Callable = print
-        self.error: Callable = print
-        self.warning: Callable = print
-        self.critical: Callable = print
-
-
-LoggerLike: object = Union[Logger, logging.Logger]
-
 
 class AsyncScanManager:
     """ AsyncScanManager class.
@@ -43,12 +27,12 @@ class AsyncScanManager:
     It connects to the SGM4, fetches data, reduces it, trains the GP and asks for the next position.
     
     Args:
-        settings (dict | PathLike): A dictionary with the settings or a path to a yaml file with the settings.
-        logger (LoggerLike, optional): A logger object. Defaults to None.
+        settings (dict | str | Path): A dictionary with the settings or a path to a yaml file with the settings.
+        logger (logging.Logger, optional): A logger object. Defaults to None.
         
     Attributes:
         settings (dict): A dictionary with the settings.
-        logger (LoggerLike): A logger object.
+        logger (logging.Logger): A logger object.
         remote (SGM4Commands): An object to communicate with the SGM4.
         gp (fvGPOptimizer): The GP object.
         positions (List): A list of positions.
@@ -77,18 +61,18 @@ class AsyncScanManager:
     """
     def __init__(
         self,
-        settings: PathLike | dict = None,
-        logger: LoggerLike = None,
+        settings: str | Path | dict = None,
+        logger: logging.Logger = None,
     ) -> None:
         """
         Initialize the AsyncScanManager object.
 
         Args:
-            settings (dict | PathLike): A dictionary with the settings or a path to a yaml file with
+            settings (dict | str | Path): A dictionary with the settings or a path to a yaml file with
             the settings.
         """
         # load settings
-        if isinstance(settings, PathLike):
+        if isinstance(settings, str | Path):
             self.settings_file = settings
             with open(settings) as f:
                 self.settings = yaml.load(f, Loader=yaml.FullLoader)
@@ -97,9 +81,9 @@ class AsyncScanManager:
 
         # set logger
         if logger is not None:
-            self.logger: Logger = logger
+            self.logger: logging.Logger = logger
         else:
-            self.logger = Logger()
+            self.logger =  logging.Logger()
         self.logger.info("Initialized AsyncScanManager.")
 
         self.task_labels: List[str] = list(self.settings["tasks"].keys())
@@ -142,7 +126,6 @@ class AsyncScanManager:
             [1, 0],
             [0.5, 0],
         ]
-
 
     @property
     def val_array(self) -> NDArray[Any]:
@@ -202,7 +185,6 @@ class AsyncScanManager:
                 f"Axes: {[a.shape for a in self.remote.axes]} | Limits: {self.remote.limits} | Step size: {self.remote.step_size} "
             )
         
-
     def save_settings(
         self,
     ) -> Path:
@@ -548,7 +530,7 @@ class AsyncScanManager:
                         )
                         self._should_stop = True
                         break
-                    
+                    self.gp.cost_function_parameters.update({'prev_points': self.gp.x_data,})
                     answer = self.gp.ask(
                         acquisition_function=aqf,
                         x0 = missing_positions,
@@ -556,23 +538,9 @@ class AsyncScanManager:
                     )
                     next_pos = answer["x"]
                     for point in next_pos:
-                        self.remote.ADD_POINT(*point)
-                        self.logger.info(f"ASK             | Added {point} to scan.")
-                    # # Remove once the correct points are passed to the ask function.
-                    # # |<--
-                    # try:
-                    #     pos_on_grid: Tuple[int] = closest_point_on_grid(
-                    #         next_pos, axes=self.remote.axes
-                    #     )
-                    #     self.logger.info(
-                    #         f"Next suggestesd position: {next_pos} rounded to {pos_on_grid}"
-                    #     )
-                    #     self.remote.ADD_POINT(*pos_on_grid)
-                    # except ValueError:
-                    #     self.logger.error(
-                    #         f"Error comparing {next_pos} to previous positions to set it on grid. with axes {self.remote.axes}"
-                    #     )
-                    # # -->|
+                        rounded_point = closest_point_on_grid(point, axes=self.remote.axes)
+                        self.remote.ADD_POINT(*rounded_point)
+                        self.logger.info(f"ASK             | Added {rounded_point} to scan. rounded from {point}")
                     self.replot = True
             else:
                 self.logger.debug("No data to update.")

@@ -148,3 +148,20 @@ def manhattan_cost_function(
         distance = manhattan_distance(origin,x[i,:]) * point_to_um
         times[i] = weight * distance / speed  + dwell_time + dead_time
     return times
+
+def manhattan_avoid_repetition(
+        origin: np.ndarray[float],
+        x: Sequence[Tuple[float,float]],
+        cost_func_params: dict[str, Any] = None,
+    ) -> float:
+    """Avoid repeating the same point twice and compute the movement cost between two points"""
+    min_distance = cost_func_params.pop('min_distance',1.0)
+    gp_x_data:np.ndarray = cost_func_params.pop('prev_points',np.empty((0,2)))
+    
+    prev_points = gp_x_data[:,:2]
+
+    if prev_points.shape[0] > 0:
+        all_distances = np.linalg.norm(x-prev_points)
+        if np.any(all_distances < min_distance):
+            return [1_000_000_000]
+    return manhattan_cost_function(origin,x,cost_func_params)

@@ -10,7 +10,7 @@ logging:
   formatter: '%(asctime)s - %(name)s - %(levelname)s | %(message)s'
 
 data:
-  data_dir: F:\data\ARPESdatabase\maps\SGM4
+  data_dir: D:\data\ARPESdatabase\maps\SGM4
   file_name: MBT_C_62 # Z006_35_0.h5
   target_dir: C:\Users\stein\OneDrive\Documents\_Work\_code\ARPES-ASTRID\smartscan\data
 

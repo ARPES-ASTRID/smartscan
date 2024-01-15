@@ -33,14 +33,17 @@ class DataFetcher(QtCore.QObject):
             buffer_size=self.buffer_size,
             timeout=self.timeout,
             checksum=self.checksum,
-            CLRF=self.CLRF,
-            logger=self.logger,
         )
 
         self.logger.debug(f"TCP settings: {self.settings}")
         self.timer = QtCore.QTimer(self)
-        self.timer.setInterval(self.settings['timers'].get('fetch_data',50)) # in ms
-        self.timer.timeout.connect(self.fetch_data)
+        self.timer.setInterval(self.settings['core'].get('fetch_data_clock',50)) # in ms
+        self.timer.timeout.connect(self.update)
+
+    @QtCore.pyqtSlot()
+    def update(self) -> None:
+        # self.fetch_data()
+        pass
 
     @QtCore.pyqtSlot()
     def fetch_data(self) -> None:

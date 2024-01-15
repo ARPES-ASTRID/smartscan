@@ -14,9 +14,9 @@ paths:
 
 core: # in milliseconds
   n_threads: 4
-  master_clock: 50 # ms
+  master_clock: 500 # ms
   fetch_data_clock: 50 # ms
-  process_data_clock: 50 # ms
+  # process_data_clock: 50 # ms
 
 scanning:
   max_points: 499 # 0 for unlimited

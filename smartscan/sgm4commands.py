@@ -1,4 +1,5 @@
 from typing import Any, List, Tuple
+import logging
 import numpy as np
 from numpy.typing import NDArray
 from pathlib import Path
@@ -31,6 +32,7 @@ class SGM4Commands:
         timeout: float = 1.0,
         buffer_size: int = 1024,
     ) -> None:
+        self.logger = logging.getLogger(f"{__name__}.SGM4Commands")
         # TCP
         self.host = host
         self.port = port
@@ -129,6 +131,7 @@ class SGM4Commands:
         message = command.upper()
         for arg in args:
             message += f" {arg}"
+        self.logger.debug(f"Sending message: {message}")
         response = send_tcp_message(
             host=self.host,
             port=self.port,
@@ -139,6 +142,7 @@ class SGM4Commands:
             buffer_size=self.buffer_size,
             CLRF=True,
         )
+        self.logger.debug(f"Received response: {message} -> {response[:50]}...")
         if "INVALID" in response:
             raise RuntimeError(f"Invalid command: {command}")
         elif "ERROR" in response:

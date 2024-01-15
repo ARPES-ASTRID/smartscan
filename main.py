@@ -76,33 +76,30 @@ if __name__ == "__main__":
 
     logger = logging.getLogger(__name__)
 
+    if settings["logging"]["directory"] is not None:
+        logdir = Path(settings["logging"]["directory"])
+        if not logdir.exists():
+            logdir.mkdir()
+        # highest number of existing logfiles
+        i = 0
+        for file in logdir.iterdir():
+            if file.suffix == ".txt":
+                i = max(i, int(file.stem.split("_")[2]))
+
+        # current datetime
+        now = datetime.now().strftime("%Y%m%d_%H%M%S")
+        logname = f"scan_log_{i}_{now}.txt"
+
+        fh = logging.FileHandler(logdir / logname)
+        fh.setLevel("DEBUG")
+        fh.setFormatter(formatter)
+        logger.addHandler(fh)
+
+    logger.debug('Created logger at level %s' % logger.level)
+
+
     # numpy compact printing
     np.set_printoptions(precision=3, suppress=True)
-
-    # if settings["logging"]["directory"] is not None:
-    #     logdir = Path(settings["logging"]["directory"])
-    #     if not logdir.exists():
-    #         logdir.mkdir()
-    #     # highest number of existing logfiles
-    #     i = 0
-    #     for file in logdir.iterdir():
-    #         if file.suffix == ".txt":
-    #             i = max(i, int(file.stem.split("_")[2]))
-
-    #     # current datetime
-    #     now = datetime.now().strftime("%Y%m%d_%H%M%S")
-    #     logname = f"scan_log_{i}_{now}.txt"
-
-    #     fh = logging.FileHandler(logdir / logname)
-    #     fh.setLevel("DEBUG")
-    #     fh.setFormatter(formatter)
-    #     logger.addHandler(fh)
-
-
-    # dictConfig(logging_config)
-
-    # logger = logging.getLogger('main')
-    logger.debug('Created logger at level %s' % logger.level)
 
     # an unsafe, unsupported, undocumented workaround :(
     os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"

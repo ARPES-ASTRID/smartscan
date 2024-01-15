@@ -13,18 +13,167 @@ class SmartScanMainWindow(QtWidgets.QMainWindow):
         super().__init__()
         self.logger = logging.getLogger(f"{__name__}.SmartScanMainWindow")
         self.logger.debug("init SmartScanMainWindow")
+
+        self.status_bar = self.statusBar()
+        self.status_bar.showMessage('ready')
+
         self.setWindowTitle("SmartScan")
         self.setWindowIcon(QtGui.QIcon("icons/logo256.png"))
         self.resize(800, 600)
         self.move(300, 300)
 
+        # # set the cool dark theme and other plotting settings
+        # self.setStyleSheet(qdarkstyle.load_stylesheet_pyqt5())
+
+        # pg.setConfigOption('background', (25, 35, 45))
+        # pg.setConfigOption('foreground', 'w')
+        # pg.setConfigOptions(antialias=True)
+
         self.settings = settings
 
         self.scan_manager, self.scan_manager_thread = self.init_scan_manager()
         self.plot_widget = self.init_plot_widget()
- 
 
-    def init_scan_manager(self) -> SmartScanManager:
+        self.create_menu()
+        self.create_main_frame()
+        self.create_status_bar()
+
+        # self.update_ui()
+
+
+    # Create the GUI interface
+    def create_menu(self) -> None:
+        self.file_menu = self.menuBar().addMenu("&File")
+
+        quit_action = self.create_action("&Quit", slot=self.close, 
+            shortcut="Ctrl+Q", tip="Close the application")
+
+        self.add_actions(self.file_menu, 
+            (quit_action,))
+
+        self.help_menu = self.menuBar().addMenu("&Help")
+
+        about_action = self.create_action("&About", 
+            shortcut='F1', slot=self.on_about, tip='About the demo')
+
+        self.add_actions(self.help_menu, (about_action,))
+
+    def create_main_frame(self) -> None:
+        self.main_frame = QtWidgets.QWidget()
+        self.main_frame.setFocus()
+        self.setCentralWidget(self.main_frame)
+
+        self.create_main_layout()
+
+    def create_main_layout(self) -> None:
+        self.main_layout = QtWidgets.QHBoxLayout()
+        self.main_frame.setLayout(self.main_layout)
+
+        self.create_left_frame()
+        self.create_right_frame()
+    
+    def create_left_frame(self) -> None:
+        self.left_frame = QtWidgets.QFrame()
+        self.left_frame.setFrameShape(QtWidgets.QFrame.StyledPanel)
+        self.left_frame.setFrameShadow(QtWidgets.QFrame.Raised)
+        self.main_layout.addWidget(self.left_frame)
+
+        self.create_left_frame_layout()
+
+    def create_left_frame_layout(self) -> None:
+        self.left_frame_layout = QtWidgets.QVBoxLayout()
+        self.left_frame.setLayout(self.left_frame_layout)
+
+        self.start_button = QtWidgets.QPushButton('Start')
+        self.start_button.clicked.connect(self.on_start)
+        self.left_frame_layout.addWidget(self.start_button)
+        
+        self.stop_button = QtWidgets.QPushButton('Stop')
+        self.stop_button.clicked.connect(self.on_stop)
+        self.left_frame_layout.addWidget(self.stop_button)
+
+    def create_right_frame(self) -> None:
+        self.right_frame = QtWidgets.QFrame()
+        self.right_frame.setFrameShape(QtWidgets.QFrame.StyledPanel)
+        self.right_frame.setFrameShadow(QtWidgets.QFrame.Raised)
+        self.main_layout.addWidget(self.right_frame)
+
+        self.create_right_frame_layout()
+
+    def create_right_frame_layout(self) -> None:
+        self.right_frame_layout = QtWidgets.QVBoxLayout()
+        self.right_frame.setLayout(self.right_frame_layout)
+
+    def create_status_bar(self) -> None:
+        self.status_text = QtWidgets.QLabel("This is a demo")
+        self.statusBar().addWidget(self.status_text, 1)
+
+    def create_action(
+            self, 
+            text: str, 
+            slot=None, 
+            shortcut=None, 
+            icon=None, 
+            tip=None, 
+            checkable=False, 
+            # signal="triggered()"
+        ) -> QtWidgets.QAction:
+        action = QtWidgets.QAction(text, self)
+        if icon is not None:
+            action.setIcon(QtGui.QIcon(icon))
+        if shortcut is not None:
+            action.setShortcut(shortcut)
+        if tip is not None:
+            action.setToolTip(tip)
+            action.setStatusTip(tip)
+        if slot is not None:
+            action.triggered.connect(slot)
+        if checkable:
+            action.setCheckable(True)
+        return action
+    
+    def add_actions(
+            self, 
+            target: QtWidgets.QWidget, 
+            actions: list
+        ) -> None:
+        for action in actions:
+            if action is None:
+                target.addSeparator()
+            else:
+                target.addAction(action)
+
+    def on_about(self) -> None:
+        msg = """ 
+            This is a demo
+            """
+        QtWidgets.QMessageBox.about(self, "About the demo", msg.strip())
+
+    # Initialize the scan manager
+
+    @QtCore.pyqtSlot()
+    def on_start(self) -> None:
+        self.logger.debug('Starting scan')
+        if self.scan_manager_thread is None:
+            self.scan_manager, self.scan_manager_thread = self.init_scan_manager()
+        if self.scan_manager_thread.isRunning():
+            self.logger.warning('Scan manager thread is already running')
+            return
+        # self.init_scan_manager()
+        self.scan_manager_thread.start()
+        self.logger.info('Started scan')
+
+    @QtCore.pyqtSlot()
+    def on_stop(self) -> None:
+        self.logger.debug('Stopping scan')
+        self.scan_manager_thread.quit()
+        self.scan_manager_thread.wait()
+        self.scan_manager_thread.terminate()
+        self.scan_manager = None
+        self.scan_manager_thread = None
+        self.logger.info('Stopped scan')
+
+    def init_scan_manager(self) -> tuple[SmartScanManager, QtCore.QThread]:
         """ init scan manager """
         manager = SmartScanManager(settings=self.settings)
         manager.new_raw_data.connect(self.on_raw_data)
@@ -37,7 +186,9 @@ class SmartScanMainWindow(QtWidgets.QMainWindow):
         manager.error.connect(self.on_thread_error)
         manager_thread = QtCore.QThread()
         manager.moveToThread(manager_thread)
-        manager_thread.start()
+        manager_thread.started.connect(manager.start)
+        manager_thread.finished.connect(manager.stop)
+        # manager_thread.start()
         return manager, manager_thread
     
     @QtCore.pyqtSlot(str)
@@ -79,9 +230,22 @@ class SmartScanMainWindow(QtWidgets.QMainWindow):
 
     def closeEvent(self, event: QtGui.QCloseEvent) -> None:
         """Handle close event."""
-        self.scan_manager_thread.quit()
-        self.scan_manager_thread.wait()
+        if self.scan_manager_thread is not None:
+            self.logger.info('Killing scan manager thread')
+            self.scan_manager_thread.quit()
+            self.scan_manager_thread.wait()
         event.accept()
+
+    def keyPressEvent(self, event) -> None:
+        if event.key() == QtCore.Qt.Key_Escape:
+            self.close()
+        else:
+            super().keyPressEvent(event)
+
+    def close(self) -> None:
+        self.logger.info('Closing MainWindow')
+        super().close()
+        self.logger.info('Closed MainWindow')
 
 
 class SmartScanApp(QtWidgets.QApplication):

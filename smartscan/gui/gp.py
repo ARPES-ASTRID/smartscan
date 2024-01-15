@@ -57,6 +57,14 @@ class GPManager(QtCore.QObject):
         self._values = None
         self._positions = None
 
+        self.task_labels = self.settings["scanning"]["tasks"]
+        self.task_normalization_weights = None
+
+        self.timer = QtCore.QTimer(self)
+        self.timer.setInterval(self.settings["core"].get("gp_loop_clock", 50))
+        self.timer.timeout.connect(self.run)
+        
+
     @property
     def positions(self) -> np.ndarray:
         """Get the list of positions.

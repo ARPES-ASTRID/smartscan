@@ -50,10 +50,13 @@ class SmartScanManager(QtCore.QObject):
 
         self.pool = QtCore.QThreadPool()
         self.pool.setMaxThreadCount(self.settings['core'].get('n_threads',4))
-
+        self.logger.debug(f"Max thread count: {self.pool.maxThreadCount()}")
         self.timer = QtCore.QTimer(self)
         self.timer.setInterval(self.settings['core'].get('master_clock',50)) # in ms
         self.timer.timeout.connect(self.update)
+        self.logger.debug(f"Master clock: {self.timer.interval()} ms")
+
+        self._should_stop = False
 
     @QtCore.pyqtSlot()
     def start(self) -> None:
@@ -66,6 +69,7 @@ class SmartScanManager(QtCore.QObject):
     def stop(self) -> None:
         """Stop the scan."""
         self.logger.info('Stopping all scan loops')
+        # self._should_stop = True
         self.stop_gp()
         self.stop_data_fetcher()
         try:
@@ -85,33 +89,40 @@ class SmartScanManager(QtCore.QObject):
             self.check_queues()
         else:
             self.stop()
-        
+    
+    @property
+    def should_stop(self) -> bool:
+        """ check if the scan should stop """
+        return self._should_stop
     def check_queues(self) -> None:
         """ check the queues for new data"""
         if not self.raw_data_queue.empty():
-            self.reduce_data(self.raw_data_queue.get())
+            pos, data = self.raw_data_queue.get()
+            self.reduce_data(pos,data)
         if not self.reduced_data_queue.empty():
-            self.gp_manager.update_data_and_positions(self.processed_data_queue.get())
+            pos, data = self.reduced_data_queue.get()
+            self.gp_manager.update_data_and_positions(pos, data)
         if not self.hyperparameters_queue.empty():
             # self.gp_manager.update_hyperparameters(self.hyperparameters_queue.get())
             pass
         if not self.points_queue.empty():
             pass
 
-    @QtCore.pyqtSlot(np.ndarray)
-    def reduce_data(self, data: np.ndarray) -> None:
+    # @QtCore.pyqtSlot(np.ndarray, np.ndarray)
+    def reduce_data(self, pos:np.ndarray, data: np.ndarray) -> None:
         """ reduce data """
-        self.logger.debug(f"Reducing data: {data.shape}")
-        self.raw_data_history.append(data)
+        self.logger.debug(f"Reducing data: pos {pos} {data.shape}")
+        self.raw_data_history.append((pos,data))
         runnable = Runnable(
-            reduce, 
+            reduce,
+            pos,
             data,
             settings=self.settings,
             logger=self.logger,
             )
         self.pool.start(runnable)
-        runnable.result.connect(self.on_reduced_data)
-        runnable.error.connect(self.on_thread_error)
+        runnable.signals.result.connect(self.on_reduced_data)
+        runnable.signals.error.connect(self.on_thread_error)
         # runnable.finished.connect(self.on_thread_finished)
 
     def start_gp(self) -> None:
@@ -167,19 +178,25 @@ class SmartScanManager(QtCore.QObject):
             except AttributeError:
                 self.logger.error("Data fetcher not running.")
 
-    @QtCore.pyqtSlot(tuple)
-    def on_reduced_data(self, data: tuple[np.ndarray]) -> None:
+    @QtCore.pyqtSlot(object)
+    def on_reduced_data(self, result:object) -> None:
         """Handle the reduced data from the thread."""
-        self.logger.debug(f"Reduced data: pos{data[0]} shape {data.shape}")
-        self.reduced_data_history.append(data)
-        self.new_reduced_data.emit(data)
-        self.reduced_data_queue.put(data)
+        try:
+            pos, data = result
+            self.logger.debug(f"Reduced data: pos{pos} shape {data.shape}")
+            self.reduced_data_history.append((pos,data))
+            self.new_reduced_data.emit(pos,data)
+            self.reduced_data_queue.put((pos,data))
+        except Exception as e:
+            self.logger.error(f"{type(e)} while handling reduced data: {e} \n {traceback.format_exc()}")
+            self.error.emit(str(e))
 
-    @QtCore.pyqtSlot(str)
+    @QtCore.pyqtSlot(tuple)
     def on_thread_error(self, error: str) -> None:
         """Handle the error signal from the thread."""
-        self.logger.error(error)
-        self.error.emit(error)
+        exctype, value, traceback_ = error
+        self.logger.error(value)
+        self.error.emit(value)
 
     @QtCore.pyqtSlot()
     def on_gp_finished(self) -> None:
@@ -231,12 +248,12 @@ class SmartScanManager(QtCore.QObject):
         self.logger.error(error)
         self.error.emit(error)
 
-    @QtCore.pyqtSlot(np.ndarray)
-    def on_new_data(self, data: np.ndarray) -> None:
+    @QtCore.pyqtSlot(np.ndarray, np.ndarray)
+    def on_new_data(self, pos:np.ndarray, data: np.ndarray) -> None:
         """Handle the new_data signal from the data fetcher."""
         self.logger.debug(f"New data: {data}")
-        self.new_raw_data.emit(data)
-        self.raw_data_queue.put(data)
+        self.new_raw_data.emit(pos,data)
+        self.raw_data_queue.put((pos,data))
 
     def __del__(self) -> None:
         """Delete the object."""
@@ -247,24 +264,27 @@ class SmartScanManager(QtCore.QObject):
             pass
             # self.logger.error(f"{str(type(e))} stopping the scan: {e}")
 
-
-class Runnable(QtCore.QRunnable):
-    """A runnable object for multithreading."""
+class RunnableSignals(QtCore.QObject):
+    """Signals for the Runnable object."""
 
     finished = QtCore.pyqtSignal()
     error = QtCore.pyqtSignal(tuple)
     result = QtCore.pyqtSignal(object)
+
+class Runnable(QtCore.QRunnable):
+    """A runnable object for multithreading."""
 
     def __init__(self, function: callable, *args, **kwargs):
         super().__init__()
         self.function = function
         self.args = args
         self.kwargs = kwargs
+        self.signals = RunnableSignals()
 
     def run(self) -> None:
         """Run the function."""
         try:
-            result = self.fn(*self.args, **self.kwargs)
+            result = self.function(*self.args, **self.kwargs)
         except Exception:
             traceback.print_exc()
             exctype, value = sys.exc_info()[:2]
@@ -303,7 +323,7 @@ class Settings:
         with open(path, 'w') as f:
             yaml.dump(self._settings, f)
 
-def reduce(data: np.ndarray, settings: dict, logger: logging.Logger) -> np.ndarray:
+def reduce(pos: np.ndarray, data: np.ndarray, settings: dict, logger: logging.Logger) -> np.ndarray:
     """ reduce data """
     logger.debug(f"Reducing data: {data.shape}")
     # t0 = time.time()
@@ -337,4 +357,4 @@ def reduce(data: np.ndarray, settings: dict, logger: logging.Logger) -> np.ndarr
     #         f"and task labels {len(self.task_labels)}."
     #     )
     # logger.debug(f"Reduction {pos} | time: {time.time()-t1:.3f} s")
-    return reduced
+    return pos, reduced

@@ -4,12 +4,11 @@ from functools import partial
 
 from PyQt5 import QtCore
 import numpy as np
-from fvgp import fvGPOptimizer
+from gpcam.gp_optimizer import fvGPOptimizer
 
 from smartscan.utils import pretty_print_time
 import smartscan.gp.aquisition_functions as aquisition_functions
 import smartscan.gp.cost_functions as cost_functions
-
 
 
 class GPManager(QtCore.QObject):
@@ -41,12 +40,11 @@ class GPManager(QtCore.QObject):
     status = QtCore.pyqtSignal(str)
     error = QtCore.pyqtSignal(str)
 
-    def __init__(self, parent=None, settings=None) -> None:
-        super().__init__(parent)
+    def __init__(self, settings) -> None:
+        super().__init__()
         self.logger = logging.getLogger(f"{__name__}.GPManager")
         self.logger.debug("init GPManager")
 
-        self.p = parent
         self.settings = settings
 
         self.gp = None

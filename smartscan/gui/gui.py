@@ -1,23 +1,32 @@
+import logging
+
 from PyQt5 import QtCore, QtGui, QtWidgets
 
 import numpy as np
+import yaml
 
-from smarstcan.gui.core import SmartScanManager
+from .core import SmartScanManager, Settings
 
-class SmartScanMainWindow(QtCore.QMainWindow):
-    def __init__(self, parent=None):
-        super().__init__(parent)
+
+class SmartScanMainWindow(QtWidgets.QMainWindow):
+    def __init__(self, settings) -> None:
+        super().__init__()
+        self.logger = logging.getLogger(f"{__name__}.SmartScanMainWindow")
+        self.logger.debug("init SmartScanMainWindow")
         self.setWindowTitle("SmartScan")
         self.setWindowIcon(QtGui.QIcon("icons/logo256.png"))
         self.resize(800, 600)
         self.move(300, 300)
 
+        self.settings = settings
+
         self.scan_manager, self.scan_manager_thread = self.init_scan_manager()
         self.plot_widget = self.init_plot_widget()
+ 
 
     def init_scan_manager(self) -> SmartScanManager:
         """ init scan manager """
-        manager = SmartScanManager()
+        manager = SmartScanManager(settings=self.settings)
         manager.new_raw_data.connect(self.on_raw_data)
         manager.new_reduced_data.connect(self.on_reduced_data)
         manager.status.connect(self.statusBar().showMessage)
@@ -34,6 +43,7 @@ class SmartScanMainWindow(QtCore.QMainWindow):
     @QtCore.pyqtSlot(str)
     def on_thread_error(self, error: str) -> None:
         """Handle errors from the scan manager thread."""
+        self.logger.error(error)
         self.statusBar().showMessage(error)
 
     @QtCore.pyqtSlot(np.ndarray, np.ndarray)
@@ -59,7 +69,7 @@ class SmartScanMainWindow(QtCore.QMainWindow):
     @QtCore.pyqtSlot()
     def on_finished(self) -> None:
         """Handle finished signal from the scan manager thread."""
-        self.statusBar().showMessage(f"Scan finished.")
+        self.statusBar().showMessage("Scan finished.")
 
     def init_plot_widget(self) -> QtWidgets.QWidget:
         """ init plot widget """
@@ -75,10 +85,14 @@ class SmartScanMainWindow(QtCore.QMainWindow):
 
 
 class SmartScanApp(QtWidgets.QApplication):
-    def __init__(self, argv: list) -> None:
+    def __init__(self, argv: list, settings=None) -> None:
         super().__init__(argv)
-        self.main_window = SmartScanMainWindow()
+        self.logger = logging.getLogger(f"{__name__}.SmartScanApp")
+        self.settings = Settings(settings)
+        self.logger.debug("init SmartScanApp")
+        self.main_window = SmartScanMainWindow(settings=self.settings)
         self.main_window.show()
+
 
 if __name__ == "__main__":
     import sys

@@ -13,10 +13,10 @@ class DataFetcher(QtCore.QObject):
     finished = QtCore.pyqtSignal()
     error = QtCore.pyqtSignal(str)
     
-    def __init__(self, settings: dict=None) -> None:
+    def __init__(self, settings) -> None:
         super().__init__()
         self.logger = logging.getLogger(f"{__name__}.DataFetcher")
-        self.logger.debug("init Data Fetcher")
+        self.logger.debug("init DataFetcher")
 
         self.settings = settings
 
@@ -74,18 +74,6 @@ class DataFetcher(QtCore.QObject):
         self.timer.stop()
         self.finished.emit()
         self.status.emit("Stopped")
-
-    def pause(self) -> None:
-        """Pause the data fetcher."""
-        self.logger.debug("Pausing data fetcher.")
-        self.timer.stop()
-        self.status.emit("Paused")
-
-    def resume(self) -> None:
-        """Resume the data fetcher."""
-        self.logger.debug("Resuming data fetcher.")
-        self.timer.start()
-        self.status.emit("Running")
 
     def __del__(self) -> None:
         """Delete the data fetcher."""

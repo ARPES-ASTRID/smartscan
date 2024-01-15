@@ -5,17 +5,18 @@ TCP:
   timeout: 10 # seconds
 
 logging:
-  level: INFO
+  level: DEBUG
   directory: null
   formatter: '%(asctime)s - %(name)s - %(levelname)s | %(message)s'
 
 paths:
   data: './data'
 
-timers: # in milliseconds
-  master: 50
-  fetch_data: 50
-  process_data: 50
+core: # in milliseconds
+  n_threads: 4
+  master_clock: 50 # ms
+  fetch_data_clock: 50 # ms
+  process_data_clock: 50 # ms
 
 scanning:
   max_points: 499 # 0 for unlimited

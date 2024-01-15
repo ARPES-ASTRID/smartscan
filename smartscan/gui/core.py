@@ -1,9 +1,13 @@
 # Purpose: Core elements of the SmartScan program
+from __future__ import annotations
 import logging
+from pathlib import Path
 import multiprocessing as mp
 import sys
+from typing import Any
 
 import numpy as np
+import yaml
 from PyQt5 import QtCore
 import traceback
 
@@ -14,21 +18,20 @@ from .sgm4 import DataFetcher
 
 class SmartScanManager(QtCore.QObject):
 
-    new_raw_data = QtCore.pyqtSignal(np.ndarray)
-    new_reduced_data = QtCore.pyqtSignal(np.ndarray)
-    new_hyperparameters = QtCore.pyqtSignal(np.ndarray)
+    new_raw_data = QtCore.pyqtSignal(np.ndarray, np.ndarray)
+    new_reduced_data = QtCore.pyqtSignal(np.ndarray, np.ndarray)
+    new_hyperparameters = QtCore.pyqtSignal(np.ndarray, np.ndarray)
     new_points = QtCore.pyqtSignal(np.ndarray)
 
     status = QtCore.pyqtSignal(str)
     finished = QtCore.pyqtSignal()
     error = QtCore.pyqtSignal(str)
 
-    def __init__(self, parent=None, settings: dict=None):
-        super().__init__(parent)
+    def __init__(self, settings) -> None:
+        super().__init__()
         self.logger = logging.getLogger(f"{__name__}.ThreadManager")
         self.logger.debug("init ThreadManager")
-        
-        self.p = parent
+
         self.settings = settings
 
         self.gp_manager = None
@@ -46,21 +49,38 @@ class SmartScanManager(QtCore.QObject):
         self.points_history = []
 
         self.pool = QtCore.QThreadPool()
-        self.pool.setMaxThreadCount(self.n_processors)
+        self.pool.setMaxThreadCount(self.settings['core'].get('n_threads',4))
 
         self.timer = QtCore.QTimer(self)
-        self.timer.setInterval(self.settings['timers'].get('master',50)) # in ms
+        self.timer.setInterval(self.settings['core'].get('master_clock',50)) # in ms
         self.timer.timeout.connect(self.update)
+
+    @QtCore.pyqtSlot()
+    def start(self) -> None:
+        """Start the scan."""
+        self.start_gp()
+        self.start_data_fetcher()
         self.timer.start()
 
+    @QtCore.pyqtSlot()
+    def stop(self) -> None:
+        """Stop the scan."""
+        self.logger.info('Stopping all scan loops')
+        self.stop_gp()
+        self.stop_data_fetcher()
+        try:
+            self.timer.stop()
+        except RuntimeError:
+            pass
+        self.logger.info('All scan loops stopped')
+        self.finished.emit()
+
+    @QtCore.pyqtSlot()
     def update(self) -> None:
         """ run timed tasks """
         if not self.timer.isActive():
             return
-        if not self.data_fetcher_thread.isRunning():
-            self.start_data_fetcher()
-        if not self.gp_manager_thread.isRunning():
-            self.start_gp()
+        self.data_fetcher.fetch_data()
         if not self.should_stop:
             self.check_queues()
         else:
@@ -78,6 +98,7 @@ class SmartScanManager(QtCore.QObject):
         if not self.points_queue.empty():
             pass
 
+    @QtCore.pyqtSlot(np.ndarray)
     def reduce_data(self, data: np.ndarray) -> None:
         """ reduce data """
         self.logger.debug(f"Reducing data: {data.shape}")
@@ -93,22 +114,10 @@ class SmartScanManager(QtCore.QObject):
         runnable.error.connect(self.on_thread_error)
         # runnable.finished.connect(self.on_thread_finished)
 
-    def on_reduced_data(self, data: tuple[np.ndarray]) -> None:
-        """Handle the reduced data from the thread."""
-        self.logger.debug(f"Reduced data: pos{data[0]} shape {data.shape}")
-        self.reduced_data_history.append(data)
-        self.new_reduced_data.emit(data)
-        self.reduced_data_queue.put(data)
-
-    def on_thread_error(self, error: str) -> None:
-        """Handle the error signal from the thread."""
-        self.logger.error(error)
-        self.error.emit(error)
-
     def start_gp(self) -> None:
         """Start the GP loop."""
         self.logger.debug("Creating GP manager")
-        self.gp_manager = GPManager(parent=self)
+        self.gp_manager = GPManager(settings=self.settings)
         self.gp_manager_thread = QtCore.QThread()
         self.logger.debug("Moving GP manager to thread")
         self.gp_manager.moveToThread(self.gp_manager_thread)
@@ -126,50 +135,16 @@ class SmartScanManager(QtCore.QObject):
     def stop_gp(self) -> None:
         """Stop the GP loop."""
         self.logger.debug("Stopping GP loop.")
-        self.gp_manager.stop()
-    
-    def pause_gp(self) -> None:
-        """Pause the GP loop."""
-        self.logger.debug("Pausing GP loop.")
-        self.gp_manager.pause()
+        if self.gp_manager is not None:
+            try:
+                self.gp_manager.stop()
+            except AttributeError:
+                self.logger.error("GP manager not running.")
 
-    def resume_gp(self) -> None:
-        """Resume the GP loop."""
-        self.logger.debug("Resuming GP loop.")
-        self.gp_manager.resume()
-
-    def on_gp_finished(self) -> None:
-        """Handle the finished signal from the GP loop."""
-        self.logger.debug("GP loop finished.")
-        self.gp_manager.deleteLater()
-    
-    def on_gp_status(self, status: str) -> None:
-        """Handle the status signal from the GP loop."""
-        self.logger.debug(f"GP loop status: {status}")
-        self.status.emit(status)
-    
-    def on_gp_error(self, error: str) -> None:
-        """Handle the error signal from the GP loop."""
-        self.logger.error(error)
-        self.error.emit(error)
-
-    def on_new_points(self, points: np.ndarray) -> None:
-        """Handle the new_points signal from the GP loop."""
-        self.logger.debug(f"New points: {points}")
-        self.new_points.emit(points)
-        self.points_queue.put(points)
-        raise NotImplementedError("on_new_points not implemented")
-    
-    def on_new_hyperparameters(self, hyperparameters: np.ndarray) -> None:
-        """Handle the new_hyperparameters signal from the GP loop."""
-        self.logger.debug(f"New hyperparameters: {hyperparameters}")
-        self.new_hyperparameters.emit(hyperparameters)
-        self.hyperparameters_history.append(hyperparameters)
-    
     def start_data_fetcher(self) -> None:
         """ Start the data fetcher """
         self.logger.debug("Creating data fetcher")
-        self.data_fetcher = DataFetcher(parent=self)
+        self.data_fetcher = DataFetcher(settings=self.settings)
         self.data_fetcher_thread = QtCore.QThread()
         self.logger.debug("Moving data fetcher to thread")
         self.data_fetcher.moveToThread(self.data_fetcher_thread)
@@ -186,64 +161,91 @@ class SmartScanManager(QtCore.QObject):
     def stop_data_fetcher(self) -> None:
         """Stop the data fetcher."""
         self.logger.debug("Stopping data fetcher.")
-        self.data_fetcher.stop()
+        if self.data_fetcher is not None:
+            try:
+                self.data_fetcher.stop()
+            except AttributeError:
+                self.logger.error("Data fetcher not running.")
 
-    def pause_data_fetcher(self) -> None:
-        """Pause the data fetcher."""
-        self.logger.debug("Pausing data fetcher.")
-        self.data_fetcher.pause()
+    @QtCore.pyqtSlot(tuple)
+    def on_reduced_data(self, data: tuple[np.ndarray]) -> None:
+        """Handle the reduced data from the thread."""
+        self.logger.debug(f"Reduced data: pos{data[0]} shape {data.shape}")
+        self.reduced_data_history.append(data)
+        self.new_reduced_data.emit(data)
+        self.reduced_data_queue.put(data)
 
-    def resume_data_fetcher(self) -> None:
-        """Resume the data fetcher."""
-        self.logger.debug("Resuming data fetcher.")
-        self.data_fetcher.resume()
+    @QtCore.pyqtSlot(str)
+    def on_thread_error(self, error: str) -> None:
+        """Handle the error signal from the thread."""
+        self.logger.error(error)
+        self.error.emit(error)
 
+    @QtCore.pyqtSlot()
+    def on_gp_finished(self) -> None:
+        """Handle the finished signal from the GP loop."""
+        self.logger.debug("GP loop finished.")
+        self.gp_manager.deleteLater()
+    
+    @QtCore.pyqtSlot(str)
+    def on_gp_status(self, status: str) -> None:
+        """Handle the status signal from the GP loop."""
+        self.logger.debug(f"GP loop status: {status}")
+        self.status.emit(status)
+    
+    @QtCore.pyqtSlot(str)
+    def on_gp_error(self, error: str) -> None:
+        """Handle the error signal from the GP loop."""
+        self.logger.error(error)
+        self.error.emit(error)
+
+    @QtCore.pyqtSlot(np.ndarray)
+    def on_new_points(self, points: np.ndarray) -> None:
+        """Handle the new_points signal from the GP loop."""
+        self.logger.debug(f"New points: {points}")
+        self.new_points.emit(points)
+        self.points_queue.put(points)
+        raise NotImplementedError("on_new_points not implemented")
+    
+    @QtCore.pyqtSlot(np.ndarray)
+    def on_new_hyperparameters(self, hyperparameters: np.ndarray) -> None:
+        """Handle the new_hyperparameters signal from the GP loop."""
+        self.logger.debug(f"New hyperparameters: {hyperparameters}")
+        self.new_hyperparameters.emit(hyperparameters)
+        self.hyperparameters_history.append(hyperparameters)
+    
+    @QtCore.pyqtSlot()
     def on_data_fetcher_finished(self) -> None:
         """Handle the finished signal from the data fetcher."""
         self.logger.debug("Data fetcher finished.")
         self.data_fetcher.deleteLater()
 
+    @QtCore.pyqtSlot(str)
     def on_data_fetcher_status(self, status: str) -> None:
         """Handle the status signal from the data fetcher."""
         self.logger.debug(f"Data fetcher status: {status}")
 
+    @QtCore.pyqtSlot(str)
     def on_data_fetcher_error(self, error: str) -> None:
         """Handle the error signal from the data fetcher."""
         self.logger.error(error)
         self.error.emit(error)
 
+    @QtCore.pyqtSlot(np.ndarray)
     def on_new_data(self, data: np.ndarray) -> None:
         """Handle the new_data signal from the data fetcher."""
         self.logger.debug(f"New data: {data}")
         self.new_raw_data.emit(data)
         self.raw_data_queue.put(data)
 
-    def start(self) -> None:
-        """Start the scan."""
-        self.start_gp()
-        self.start_TCP()
-
-    def stop(self) -> None:
-        """Stop the scan."""
-        self.stop_gp()
-        self.stop_TCP()
-
-    def pause(self) -> None:
-        """Pause the scan."""
-        self.pause_gp()
-
-    def resume(self) -> None:
-        """Resume the scan."""
-        self.resume_gp()
-
-    def END(self) -> None:
-        """Stop the scan."""
-        self.stop()
-
     def __del__(self) -> None:
         """Delete the object."""
         self.logger.debug("Deleting ThreadManager")
-        self.stop()
+        try:
+            self.stop()
+        except Exception as e:
+            pass
+            # self.logger.error(f"{str(type(e))} stopping the scan: {e}")
 
 
 class Runnable(QtCore.QRunnable):
@@ -263,7 +265,7 @@ class Runnable(QtCore.QRunnable):
         """Run the function."""
         try:
             result = self.fn(*self.args, **self.kwargs)
-        except:
+        except Exception:
             traceback.print_exc()
             exctype, value = sys.exc_info()[:2]
             self.signals.error.emit((exctype, value, traceback.format_exc()))
@@ -273,6 +275,33 @@ class Runnable(QtCore.QRunnable):
             self.signals.finished.emit()  # Done
 
 
+class Settings:
+
+    def __init__(self, settings_file: str | Path) -> None:
+        super().__init__()
+        self.logger = logging.getLogger(f"{__name__}.Settings")
+        self._settings_file = Path(settings_file)
+        self.logger.debug(f"Settings file: {self._settings_file}")
+        assert self._settings_file.exists(), f"Settings file {self._settings_file} does not exist."
+        self.update()
+        self.logger = logging.getLogger(f"{__name__}.Settings")
+        self.logger.debug("init Settings")
+
+    def update(self) -> None:
+        """ read the settings file"""
+        self.logger.debug(f"Reading settings file: {self._settings_file}")
+        with open(self._settings_file) as f:
+            self._settings = yaml.load(f, Loader=yaml.FullLoader)
+
+    def __getitem__(self, key: str) -> Any:
+        self.logger.debug(f"Getting settings key: {key}")
+        return self._settings[key]
+    
+    def save(self, path: str | Path) -> None:
+        """ save the settings file """
+        self.logger.debug(f"Saving settings file: {path}")
+        with open(path, 'w') as f:
+            yaml.dump(self._settings, f)
 
 def reduce(data: np.ndarray, settings: dict, logger: logging.Logger) -> np.ndarray:
     """ reduce data """

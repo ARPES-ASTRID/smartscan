@@ -21,13 +21,13 @@ repos:
     rev: v2.31.0
     hooks:
     -   id: pyupgrade
-        args: [--py36-plus]
+        args: [--py310-plus]
 
 -   repo: https://github.com/asottile/add-trailing-comma
     rev: v2.2.1
     hooks:
     -   id: add-trailing-comma
-        args: [--py36-plus]
+        args: [--py310-plus]
 
 -   repo: https://gitlab.com/iamlikeme/nbhooks
     rev: 1.0.0
@@ -39,7 +39,7 @@ repos:
     rev: 22.3.0
     hooks:
     -   id: black
-        args: [--line-length=88]
+        args: [--line-length=100]
 
 -   repo: https://github.com/PyCQA/flake8
     rev: 4.0.1

@@ -82,7 +82,7 @@ class DataFetcher(QtCore.QObject):
         """Delete the data fetcher."""
         self.logger.debug("Deleting data fetcher.")
         try:
-            self.timer.stop()
+            self.stop()
             self.timer.deleteLater()
         except AttributeError:
             pass

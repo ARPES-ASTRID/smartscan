@@ -250,7 +250,7 @@ class SmartScanManager(QtCore.QObject):
     @QtCore.pyqtSlot(np.ndarray, np.ndarray)
     def on_new_data(self, pos:np.ndarray, data: np.ndarray) -> None:
         """Handle the new_data signal from the data fetcher."""
-        self.logger.debug(f"New data: {data}")
+        self.logger.debug(f"New data: shape {data.shape} {data.ravel()[:3]} ... {data.ravel()[-3:]}")
         self.new_raw_data.emit(pos,data)
         self.raw_data_queue.put((pos,data))
 
@@ -316,6 +316,10 @@ class Settings:
         self.logger.debug(f"Getting settings key: {key}")
         return self._settings[key]
     
+    def get(self, key: str, default: Any = None) -> Any:
+        self.logger.debug(f"Getting settings key: {key}")
+        return self._settings.get(key, default)
+
     def save(self, path: str | Path) -> None:
         """ save the settings file """
         self.logger.debug(f"Saving settings file: {path}")

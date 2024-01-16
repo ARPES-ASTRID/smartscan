@@ -15,8 +15,8 @@ class DataFetcher(QtCore.QObject):
     
     def __init__(self, settings) -> None:
         super().__init__()
-        self.logger = logging.getLogger(f"{__name__}.DataFetcher")
-        self.logger.debug("init DataFetcher")
+        self.logger = logging.getLogger("DataFetcher")
+        self.logger.debug("Created DataFetcher")
 
         self.settings = settings
 
@@ -59,7 +59,7 @@ class DataFetcher(QtCore.QObject):
                     self.logger.error(f"Error fetching data: {err}")
                     self.error.emit(err)
             else:    
-                self.logger.info(f"Received data: {pos.shape}, {data.shape}")
+                self.logger.info(f"Received data: {pos}, {data.shape}")
                 self.new_data.emit(pos,data)
         except Exception as e:
             self.logger.error(f"{type(e)} while fetching data: {e}")

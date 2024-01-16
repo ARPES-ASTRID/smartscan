@@ -94,8 +94,14 @@ if __name__ == "__main__":
         fh.setFormatter(formatter)
         logger.addHandler(fh)
 
-    logger.debug('Created logger at level %s' % logger.level)
+    logger.info('Created logger at level %s' % logger.level)
 
+    logger.critical('Critical enabled')
+    logger.error('Error enabled')
+    logger.warning('Warning enabled')
+    logger.info('Info enabled')
+    logger.debug('Debug enabled')
+    
 
     # numpy compact printing
     np.set_printoptions(precision=3, suppress=True)

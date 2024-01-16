@@ -5,9 +5,9 @@ TCP:
   timeout: 10 # seconds
 
 logging:
-  level: DEBUG
+  level: INFO
   directory: null
-  formatter: '%(asctime)s - %(name)s - %(levelname)s | %(message)s'
+  formatter: '%(asctime)s - %(name)-20s | %(levelname)-8s | %(message)s'
 
 paths:
   data: './data'

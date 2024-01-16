@@ -11,8 +11,8 @@ from .core import SmartScanManager, Settings
 class SmartScanMainWindow(QtWidgets.QMainWindow):
     def __init__(self, settings) -> None:
         super().__init__()
-        self.logger = logging.getLogger(f"{__name__}.SmartScanMainWindow")
-        self.logger.debug("init SmartScanMainWindow")
+        self.logger = logging.getLogger("SmartScanMainWindow")
+        self.logger.debug("Created SmartScanMainWindow")
 
         self.status_bar = self.statusBar()
         self.status_bar.showMessage('ready')
@@ -251,7 +251,7 @@ class SmartScanMainWindow(QtWidgets.QMainWindow):
 class SmartScanApp(QtWidgets.QApplication):
     def __init__(self, argv: list, settings=None) -> None:
         super().__init__(argv)
-        self.logger = logging.getLogger(f"{__name__}.SmartScanApp")
+        self.logger = logging.getLogger("SmartScanApp")
         self.settings = Settings(settings)
         self.logger.debug("init SmartScanApp")
         self.main_window = SmartScanMainWindow(settings=self.settings)

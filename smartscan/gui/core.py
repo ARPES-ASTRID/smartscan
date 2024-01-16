@@ -16,6 +16,7 @@ from smartscan import tasks, preprocessing
 from .gp import GPManager
 from .sgm4 import DataFetcher
 
+
 class SmartScanManager(QtCore.QObject):
 
     new_raw_data = QtCore.pyqtSignal(np.ndarray, np.ndarray)
@@ -29,8 +30,8 @@ class SmartScanManager(QtCore.QObject):
 
     def __init__(self, settings) -> None:
         super().__init__()
-        self.logger = logging.getLogger(f"{__name__}.ThreadManager")
-        self.logger.debug("init ThreadManager")
+        self.logger = logging.getLogger("ThreadManager")
+        self.logger.debug("Created ThreadManager")
 
         self.settings = settings
 
@@ -263,6 +264,7 @@ class SmartScanManager(QtCore.QObject):
             pass
             # self.logger.error(f"{str(type(e))} stopping the scan: {e}")
 
+
 class RunnableSignals(QtCore.QObject):
     """Signals for the Runnable object."""
 
@@ -270,11 +272,13 @@ class RunnableSignals(QtCore.QObject):
     error = QtCore.pyqtSignal(tuple)
     result = QtCore.pyqtSignal(object)
 
+
 class Runnable(QtCore.QRunnable):
     """A runnable object for multithreading."""
 
     def __init__(self, function: callable, *args, **kwargs):
         super().__init__()
+        self.logger = logging.getLogger(f"Runnable({function.__name__})"[:20])
         self.function = function
         self.args = args
         self.kwargs = kwargs
@@ -287,10 +291,14 @@ class Runnable(QtCore.QRunnable):
         except Exception:
             traceback.print_exc()
             exctype, value = sys.exc_info()[:2]
+            self.logger.error(f"{exctype} {value}")
             self.signals.error.emit((exctype, value, traceback.format_exc()))
         else:
+            res_str = str(result)[:30] + "..." if len(str(result)) > 30 else str(result)
+            self.logger.debug(f"Runnable result: {res_str}")
             self.signals.result.emit(result)  # Return the result of the processing
         finally:
+            self.logger.debug("Runnable finished")
             self.signals.finished.emit()  # Done
 
 
@@ -298,17 +306,16 @@ class Settings:
 
     def __init__(self, settings_file: str | Path) -> None:
         super().__init__()
-        self.logger = logging.getLogger(f"{__name__}.Settings")
+        self.logger = logging.getLogger("Settings")
+        self.logger.debug("Created Settings")
         self._settings_file = Path(settings_file)
-        self.logger.debug(f"Settings file: {self._settings_file}")
         assert self._settings_file.exists(), f"Settings file {self._settings_file} does not exist."
         self.update()
-        self.logger = logging.getLogger(f"{__name__}.Settings")
-        self.logger.debug("init Settings")
+
 
     def update(self) -> None:
         """ read the settings file"""
-        self.logger.debug(f"Reading settings file: {self._settings_file}")
+        self.logger.info(f"Loading settings file: {self._settings_file}")
         with open(self._settings_file) as f:
             self._settings = yaml.load(f, Loader=yaml.FullLoader)
 

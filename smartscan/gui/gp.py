@@ -44,8 +44,8 @@ class GPManager(QtCore.QObject):
 
     def __init__(self, settings) -> None:
         super().__init__()
-        self.logger = logging.getLogger(f"{__name__}.GPManager")
-        self.logger.debug("init GPManager")
+        self.logger = logging.getLogger("GPManager")
+        self.logger.debug("Created GPManager")
 
         self.settings = settings
 

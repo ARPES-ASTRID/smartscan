@@ -5,6 +5,8 @@ from PyQt5 import QtCore, QtGui, QtWidgets
 import numpy as np
 import yaml
 
+from smartscan.gui.plot import MainPlotWidget
+
 from .core import SmartScanManager, Settings
 
 
@@ -19,7 +21,7 @@ class SmartScanMainWindow(QtWidgets.QMainWindow):
 
         self.setWindowTitle("SmartScan")
         self.setWindowIcon(QtGui.QIcon("icons/logo256.png"))
-        self.resize(800, 600)
+        self.resize(1600,1000)
         self.move(300, 300)
 
         # # set the cool dark theme and other plotting settings
@@ -58,6 +60,12 @@ class SmartScanMainWindow(QtWidgets.QMainWindow):
 
         self.add_actions(self.help_menu, (about_action,))
 
+    def init_plot_widget(self) -> QtWidgets.QWidget:
+        """ init plot widget """
+        plot_widget = MainPlotWidget(parent=self, settings=self.settings)
+        self.setCentralWidget(plot_widget)
+        return plot_widget
+
     def create_main_frame(self) -> None:
         self.main_frame = QtWidgets.QWidget()
         self.main_frame.setFocus()
@@ -69,40 +77,37 @@ class SmartScanMainWindow(QtWidgets.QMainWindow):
         self.main_layout = QtWidgets.QHBoxLayout()
         self.main_frame.setLayout(self.main_layout)
 
-        self.create_left_frame()
-        self.create_right_frame()
+        self.create_control_frame()
+        self.create_plot_frame()
     
-    def create_left_frame(self) -> None:
-        self.left_frame = QtWidgets.QFrame()
-        self.left_frame.setFrameShape(QtWidgets.QFrame.StyledPanel)
-        self.left_frame.setFrameShadow(QtWidgets.QFrame.Raised)
-        self.main_layout.addWidget(self.left_frame)
+    def create_control_frame(self) -> None:
+        self.control_frame = QtWidgets.QFrame()
+        self.control_frame.setFrameShape(QtWidgets.QFrame.StyledPanel)
+        self.control_frame.setFrameShadow(QtWidgets.QFrame.Raised)
+        self.main_layout.addWidget(self.control_frame)
 
-        self.create_left_frame_layout()
-
-    def create_left_frame_layout(self) -> None:
-        self.left_frame_layout = QtWidgets.QVBoxLayout()
-        self.left_frame.setLayout(self.left_frame_layout)
+        self.control_frame_layout = QtWidgets.QVBoxLayout()
+        self.control_frame.setLayout(self.control_frame_layout)
 
         self.start_button = QtWidgets.QPushButton('Start')
         self.start_button.clicked.connect(self.on_start)
-        self.left_frame_layout.addWidget(self.start_button)
+        self.control_frame_layout.addWidget(self.start_button)
         
         self.stop_button = QtWidgets.QPushButton('Stop')
         self.stop_button.clicked.connect(self.on_stop)
-        self.left_frame_layout.addWidget(self.stop_button)
+        self.control_frame_layout.addWidget(self.stop_button)
 
-    def create_right_frame(self) -> None:
-        self.right_frame = QtWidgets.QFrame()
-        self.right_frame.setFrameShape(QtWidgets.QFrame.StyledPanel)
-        self.right_frame.setFrameShadow(QtWidgets.QFrame.Raised)
-        self.main_layout.addWidget(self.right_frame)
+    def create_plot_frame(self) -> None:
+        self.plot_frame = QtWidgets.QFrame()
+        self.plot_frame.setFrameShape(QtWidgets.QFrame.StyledPanel)
+        self.plot_frame.setFrameShadow(QtWidgets.QFrame.Raised)
+        self.main_layout.addWidget(self.plot_frame)
 
-        self.create_right_frame_layout()
-
-    def create_right_frame_layout(self) -> None:
-        self.right_frame_layout = QtWidgets.QVBoxLayout()
-        self.right_frame.setLayout(self.right_frame_layout)
+        self.plot_frame_layout = QtWidgets.QVBoxLayout()
+        self.plot_frame.setLayout(self.plot_frame_layout)
+        
+        self.plot_widget = MainPlotWidget(parent=self, settings=self.settings)
+        self.plot_frame_layout.addWidget(self.plot_widget)
 
     def create_status_bar(self) -> None:
         self.status_text = QtWidgets.QLabel("This is a demo")
@@ -227,12 +232,6 @@ class SmartScanMainWindow(QtWidgets.QMainWindow):
     def on_finished(self) -> None:
         """Handle finished signal from the scan manager thread."""
         self.statusBar().showMessage("Scan finished.")
-
-    def init_plot_widget(self) -> QtWidgets.QWidget:
-        """ init plot widget """
-        plot_widget = QtWidgets.QWidget(self)
-        self.setCentralWidget(plot_widget)
-        return plot_widget
 
     def closeEvent(self, event: QtGui.QCloseEvent) -> None:
         """Handle close event."""

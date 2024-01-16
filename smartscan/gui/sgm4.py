@@ -1,4 +1,5 @@
 import logging
+import time
 
 import numpy as np
 from PyQt5 import QtCore
@@ -68,6 +69,10 @@ class DataFetcher(QtCore.QObject):
     def run(self) -> None:
         """Run the data fetcher."""
         self.logger.debug("Starting data fetcher.")
+        self.sgm4.START()
+        self.logger.info("Waiting 2 seconds for SMG4 intialization...")
+        time.sleep(2)
+        self.logger.debug("Starting timer")
         self.timer.start()
         self.status.emit("Running")
 
@@ -75,6 +80,7 @@ class DataFetcher(QtCore.QObject):
         """Stop the data fetcher."""
         self.logger.debug("Stopping data fetcher.")
         self.timer.stop()
+        self.sgm4.END()
         self.finished.emit()
         self.status.emit("Stopped")
 

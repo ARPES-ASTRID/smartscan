@@ -62,7 +62,7 @@ class DataFetcher(QtCore.QObject):
                     self.logger.error(f"Error fetching data: {err}")
                     self.error.emit(err)
             else:    
-                self.logger.info(f"Received datapoint {self.data_counter} | {pos} | {data.shape} | {data.ravel()[:3]} ... {data.ravel()[-3:]}")
+                self.logger.info(f"Received #{self.data_counter} | {pos} | {data.shape} | {data.ravel()[:3]} ... {data.ravel()[-3:]}")
                 ddict = {
                     'pos': pos,
                     'data': data,

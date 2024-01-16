@@ -63,7 +63,7 @@ class GPManager(QtCore.QObject):
         self._input_space_dimension = None
         self._values = []
         self._positions = []
-
+        self._latest_index = 0
         # flags
         self._has_new_data = False
         self._should_stop = False
@@ -169,6 +169,7 @@ class GPManager(QtCore.QObject):
         self._has_new_data = True
         self._positions.append(pos)
         self._values.append(vals)
+        self._latest_index = n
 
         
     def get_taks_normalization_weights(self, update: bool = False) -> np.ndarray:
@@ -259,6 +260,7 @@ class GPManager(QtCore.QObject):
         if self.gp is not None:
             pos = np.asarray(self.positions)
             vals = np.asarray(self.values)
+            self.last_tell_index = self._latest_index
             if self.settings["scanning"]["normalize_values"] == "always":
                 vals = vals * self.get_taks_normalization_weights(update=True)
             elif self.settings["scanning"]["normalize_values"] != "never":
@@ -322,7 +324,7 @@ class GPManager(QtCore.QObject):
             for point in next_pos:
                 rounded_point = closest_point_on_grid(point, axes=self.remote.axes)
                 self.remote.ADD_POINT(*rounded_point)
-                self.logger.info(f"ASK             | Added {rounded_point} to scan. rounded from {point}")
+                self.logger.info(f"ASK      #{self.last_tell_index}) Added {rounded_point} to scan. Rounded from {point}")
                 self.new_points.emit(rounded_point)
 
 

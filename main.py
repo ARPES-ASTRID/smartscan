@@ -8,7 +8,6 @@ import numpy as np
 import yaml
 
 from pathlib import Path
-from smartscan import AsyncScanManager
 from smartscan.utils import ColoredFormatter
 
 def main_asyncio(settings) -> None:

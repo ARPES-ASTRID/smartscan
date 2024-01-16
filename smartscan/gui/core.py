@@ -138,7 +138,7 @@ class SmartScanManager(QtCore.QObject):
         self.gp_manager.error.connect(self.on_gp_error)
         self.gp_manager.new_points.connect(self.on_new_points)
         self.gp_manager.new_hyperparameters.connect(self.on_new_hyperparameters)
-        self.gp_manager_thread.started.connect(self.gp_manager.run)
+        self.gp_manager_thread.started.connect(self.gp_manager.start)
 
         self.logger.debug("Starting GP loop.")
         self.gp_manager_thread.start()
@@ -222,7 +222,6 @@ class SmartScanManager(QtCore.QObject):
         self.logger.debug(f"New points: {points}")
         self.new_points.emit(points)
         self.points_queue.put(points)
-        raise NotImplementedError("on_new_points not implemented")
     
     @QtCore.pyqtSlot(np.ndarray)
     def on_new_hyperparameters(self, hyperparameters: np.ndarray) -> None:

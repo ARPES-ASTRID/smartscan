@@ -5,10 +5,12 @@ from functools import partial
 from PyQt5 import QtCore
 import numpy as np
 from gpcam.gp_optimizer import fvGPOptimizer
+from smartscan.sgm4commands import SGM4Commands
 
 from smartscan.utils import pretty_print_time
 import smartscan.gp.aquisition_functions as aquisition_functions
 import smartscan.gp.cost_functions as cost_functions
+from smartscan.utils import closest_point_on_grid
 
 
 class GPManager(QtCore.QObject):
@@ -49,21 +51,34 @@ class GPManager(QtCore.QObject):
 
         self.gp = None
 
+        self.remote = SGM4Commands(
+            host=self.settings["TCP"]["host"],
+            port=self.settings["TCP"]["port"],
+            buffer_size=self.settings["TCP"].get("buffer_size", 1024 * 1024 * 8),
+            timeout=self.settings["TCP"].get("timeout", 1.0),
+            checksum=self.settings["TCP"].get("checksum", False),
+        )
+        # properties
+        self._limits = None
+        self._input_space_dimension = None
+        self._values = []
+        self._positions = []
+
+        # flags
+        self._has_new_data = False
         self._should_stop = False
         self._running = False
+
+        # counters
         self.iter_counter = 0
         self.hyperparameter_history = {}
 
-        self._values = None
-        self._positions = None
-
-        self.task_labels = self.settings["scanning"]["tasks"]
+        self.task_labels = list(self.settings["tasks"].keys())
         self.task_normalization_weights = None
 
         self.timer = QtCore.QTimer(self)
         self.timer.setInterval(self.settings["core"].get("gp_loop_clock", 50))
-        self.timer.timeout.connect(self.run)
-        
+        self.timer.timeout.connect(self.update)
 
     @property
     def positions(self) -> np.ndarray:
@@ -84,13 +99,26 @@ class GPManager(QtCore.QObject):
         return self._values
 
     @property
+    def n_points(self) -> int:
+        """Get the number of points.
+
+        Returns:
+            int: Number of points.
+        """
+        assert len(self.positions) == len(self.values)
+        return len(self.positions)
+
+    @property
     def should_train(self) -> bool:
         """Check if the GP should be trained.
 
         Returns:
             bool: True if the GP should be trained, False otherwise.
         """
-        return self.iter_counter % self.settings["gp"]["training"]["train_every"] == 0
+        train_every = self.settings["scanning"]["train_every"]
+        te = train_every > 0 and self.iter_counter % train_every == 0 
+        ta = self.n_points in self.settings["scanning"]['train_at']
+        return ta or te
 
     @property
     def running(self) -> bool:
@@ -112,29 +140,38 @@ class GPManager(QtCore.QObject):
         self._running = value
 
     @QtCore.pyqtSlot()
+    def start(self) -> None:
+        """Start the GP loop."""
+        self.logger.debug("Starting GP loop.")
+        self._should_stop = False
+        self.iter_counter = 0
+        self.hyperparameter_history = {}
+        self.running = True
+        self.timer.start()
+
+    @QtCore.pyqtSlot()
     def stop(self) -> None:
         """Stop the GP loop."""
         self.logger.debug("Stopping GP loop.")
         self._should_stop = True
-
-    @QtCore.pyqtSlot()
-    def pause(self) -> None:
-        """Pause the GP loop."""
-        self.logger.debug("Pausing GP loop.")
+        self.timer.stop()
+        self.finished.emit()
         self.running = False
-
-    @QtCore.pyqtSlot()
-    def resume(self) -> None:
-        """Resume the GP loop."""
-        self.logger.debug("Resuming GP loop.")
-        self.running = True
 
     @QtCore.pyqtSlot()
     def update_data_and_positions(self, pos:np.ndarray, vals:np.ndarray) -> None:
         """Update the data and positions lists."""
         self.logger.debug("Updating data and positions.")
-        self._positions = pos
-        self._values = vals
+        if len(pos) != len(vals):
+            self.logger.error("Length of positions and values do not match.")
+            self.error.emit("Length of positions and values do not match.")
+            return
+        else:
+            self.logger.info(f"Adding {pos} to GP. -> {self.n_points} points")
+            self._has_new_data = True
+            self._positions.append(pos)
+            self._values.append(vals)
+
         
     def get_taks_normalization_weights(self, update: bool = False) -> np.ndarray:
         """Get the normalization weights for the tasks.
@@ -145,17 +182,25 @@ class GPManager(QtCore.QObject):
         Returns:
             np.ndarray: Normalization weights.
         """
-        if update:
-            if self.settings["scanning"]["normalize_values"] == "init":
-                self.task_normalization_weights = np.mean(self.values, axis=0)
-            elif self.settings["scanning"]["normalize_values"] == "fixed":
+
+        if (update or 
+            self.task_normalization_weights is None or
+            self.settings["scanning"]["normalize_values"] == "always"):
+            self.task_normalization_weights = np.mean(self.values, axis=0)
+        elif self.settings["scanning"]["normalize_values"] == "fixed":
                 self.task_normalization_weights = self.settings["scanning"]["fixed_normalization"]
-            elif self.settings["scanning"]["normalize_values"] == "dynamic":
-                self.task_normalization_weights = np.mean(self.values, axis=0)
         return self.task_normalization_weights
 
-    def start(self) -> None:
-        """ init graphic interface """
+    @property
+    def input_space_dimension(self) -> int:
+        """Get the input space dimension.
+
+        Returns:
+            int: Input space dimension.
+        """
+        len(self.remote.axes)
+
+    def init_gp(self) -> None:
         """Initialize the GP.
 
         This method is called at the first iteration of the GP loop.
@@ -174,8 +219,9 @@ class GPManager(QtCore.QObject):
             f"GP object created. Input Space Dimension () = {isd} | "
             f"Output Space Dimension () = {osd} | "
             f"Output Number () = {on}"
+            f"Limits: {self.remote.limits}"
         )
-        self.tell_gp()
+        self.tell()
         self.logger.info(f"Initialized GP with {len(self.positions)} samples.")
         fvgp_pars = self.settings["gp"]["fvgp"].copy()
         init_hyperparameters = np.array(
@@ -187,12 +233,11 @@ class GPManager(QtCore.QObject):
             self.logger.debug(f"\t{k} = {v}")
         self.gp.init_fvgp(init_hyperparameters=init_hyperparameters, **fvgp_pars)
 
-        self.train_gp()
+        self.train()
 
         cost_function_dict = self.settings.get("cost_function", None)
         if cost_function_dict is not None:
-            self.logger.debug("Initializing cost function: cost_function_dict['function']")
-            
+            self.logger.debug(f"Initializing cost function: {cost_function_dict['function']}")
             cost_func_callable = getattr(cost_functions, cost_function_dict["function"])
             cost_func_params = cost_function_dict.get("params", {})
             for k,v in cost_func_params.items():
@@ -233,7 +278,7 @@ class GPManager(QtCore.QObject):
         self.logger.debug(f"\thyperparameter_bounds: {hps_bounds}")
         for k,v in train_pars.items():
             self.logger.debug(f"\t{k} = {v}")
-        self.tell_gp(update_normalization=True)
+        self.tell(update_normalization=True)
         t = time.time()
         hps_new = self.gp.train_gp(hyperparameter_bounds=hps_bounds, **train_pars)
         self.logger.info(f"Training complete in {pretty_print_time(time.time()-t)} s")
@@ -269,39 +314,64 @@ class GPManager(QtCore.QObject):
                 )
                 self._should_stop = True
                 self.finished.emit()
-            
+            self.gp.cost_function_parameters.update({'prev_points': self.gp.x_data,})
             answer = self.gp.ask(
                 acquisition_function=aqf,
                 x0 = missing_positions,
                 **ask_pars
             )
             next_pos = answer["x"]
-            self.new_points.emit(next_pos)
+            for point in next_pos:
+                rounded_point = closest_point_on_grid(point, axes=self.remote.axes)
+                self.remote.ADD_POINT(*rounded_point)
+                self.logger.info(f"ASK             | Added {rounded_point} to scan. rounded from {point}")
+                self.new_points.emit(rounded_point)
 
-    def run(self) -> None:
-        """Run the GP loop."""
-        self.logger.debug("Starting GP loop.")
-        self._should_stop = False
-        self.iter_counter = 0
-        self.hyperparameter_history = {}
-        self._running = True
-        while self._running:
-            if self._should_stop:
-                self.logger.debug("Stopping GP loop.")
-                self._running = False
-                break
-            elif self.has_new_data():
-                self.logger.debug(f"GP loop iteration {self.iter_counter}")
-                self.status.emit(f"GP loop iteration {self.iter_counter}")
-                if self.gp is None:
-                    self.start()
-                self.tell()
-                if self.should_train():
-                    self.train()
-                self.ask()
-                self.iter_counter += 1
-        self.logger.debug("GP loop finished.")
-        self.finished.emit()
-        self.status.emit("Finished")
+
+    def update(self) -> None:
+        """Update the GP loop."""
+        self.logger.debug("Updating GP loop.")
+        if self._should_stop:
+            self.logger.debug("Stopping GP loop.")
+            self._running = False
+            self.timer.stop()
+            self.finished.emit()
+        elif self._has_new_data:
+            self.logger.debug(f"GP loop iteration {self.iter_counter}")
+            self.status.emit(f"GP loop iteration {self.iter_counter}")
+            if self.gp is None:
+                self.init_gp()
+            self.tell()
+            if self.should_train:
+                self.train()
+            self.ask()
+            self.iter_counter += 1
+            self._has_new_data = False
+
+    # def run(self) -> None:
+    #     """Run the GP loop."""
+    #     self.logger.debug("Starting GP loop.")
+    #     self._should_stop = False
+    #     self.iter_counter = 0
+    #     self.hyperparameter_history = {}
+    #     self._running = True
+    #     while self._running:
+    #         if self._should_stop:
+    #             self.logger.debug("Stopping GP loop.")
+    #             self._running = False
+    #             break
+    #         elif self._has_new_data:
+    #             self.logger.debug(f"GP loop iteration {self.iter_counter}")
+    #             self.status.emit(f"GP loop iteration {self.iter_counter}")
+    #             if self.gp is None:
+    #                 self.start()
+    #             self.tell()
+    #             if self.should_train():
+    #                 self.train()
+    #             self.ask()
+    #             self.iter_counter += 1
+    #     self.logger.debug("GP loop finished.")
+    #     self.finished.emit()
+    #     self.status.emit("Finished")
 
 

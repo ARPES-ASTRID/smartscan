@@ -9,7 +9,7 @@ from smartscan.sgm4commands import SGM4Commands
 
 class DataFetcher(QtCore.QObject):
 
-    new_data = QtCore.pyqtSignal(np.ndarray, np.ndarray)
+    new_data = QtCore.pyqtSignal(dict)
     status = QtCore.pyqtSignal(str)
     finished = QtCore.pyqtSignal()
     error = QtCore.pyqtSignal(str)
@@ -20,6 +20,8 @@ class DataFetcher(QtCore.QObject):
         self.logger.debug("Created DataFetcher")
 
         self.settings = settings
+
+        self.data_counter = 0
 
         self.host = self.settings['TCP']['host']
         self.port = self.settings['TCP']['port']
@@ -60,8 +62,14 @@ class DataFetcher(QtCore.QObject):
                     self.logger.error(f"Error fetching data: {err}")
                     self.error.emit(err)
             else:    
-                self.logger.info(f"Received data: {pos}, {data.shape}")
-                self.new_data.emit(pos,data)
+                self.logger.info(f"Received datapoint {self.data_counter} | {pos} | {data.shape} | {data.ravel()[:3]} ... {data.ravel()[-3:]}")
+                ddict = {
+                    'pos': pos,
+                    'data': data,
+                    'data_counter': self.data_counter,
+                }
+                self.new_data.emit(ddict)
+                self.data_counter += 1
         except Exception as e:
             self.logger.error(f"{type(e)} while fetching data: {e}")
             self.error.emit(str(e))

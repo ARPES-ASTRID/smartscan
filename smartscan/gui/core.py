@@ -19,9 +19,9 @@ from .sgm4 import DataFetcher
 
 class SmartScanManager(QtCore.QObject):
 
-    new_raw_data = QtCore.pyqtSignal(np.ndarray, np.ndarray)
-    new_reduced_data = QtCore.pyqtSignal(np.ndarray, np.ndarray)
-    new_hyperparameters = QtCore.pyqtSignal(np.ndarray, np.ndarray)
+    new_raw_data = QtCore.pyqtSignal(dict)
+    new_reduced_data = QtCore.pyqtSignal(dict)
+    new_hyperparameters = QtCore.pyqtSignal(np.ndarray)
     new_points = QtCore.pyqtSignal(np.ndarray)
 
     status = QtCore.pyqtSignal(str)
@@ -98,11 +98,11 @@ class SmartScanManager(QtCore.QObject):
     def check_queues(self) -> None:
         """ check the queues for new data"""
         if not self.raw_data_queue.empty():
-            pos, data = self.raw_data_queue.get()
-            self.reduce_data(pos,data)
+            data_dict = self.raw_data_queue.get()
+            self.reduce_data(data_dict)
         if not self.reduced_data_queue.empty():
-            pos, data = self.reduced_data_queue.get()
-            self.gp_manager.update_data_and_positions(pos, data)
+            data_dict = self.reduced_data_queue.get()
+            self.gp_manager.update_data_and_positions(data_dict)
         if not self.hyperparameters_queue.empty():
             # self.gp_manager.update_hyperparameters(self.hyperparameters_queue.get())
             pass
@@ -110,14 +110,16 @@ class SmartScanManager(QtCore.QObject):
             pass
 
     # @QtCore.pyqtSlot(np.ndarray, np.ndarray)
-    def reduce_data(self, pos:np.ndarray, data: np.ndarray) -> None:
+    def reduce_data(self, data_dict:dict) -> None:
         """ reduce data """
-        self.logger.debug(f"Reducing data: pos {pos} {data.shape}")
-        self.raw_data_history.append((pos,data))
+        pos = data_dict['pos']
+        data = data_dict['data']
+        n = data_dict['data_counter']
+        self.logger.debug(f"Reducing data #{n} | {pos} {data.shape}")
+        self.raw_data_history.append(data_dict)
         runnable = Runnable(
             reduce,
-            pos,
-            data,
+            data_dict,
             settings=self.settings,
             logger=self.logger,
             )
@@ -179,21 +181,23 @@ class SmartScanManager(QtCore.QObject):
             except AttributeError:
                 self.logger.error("Data fetcher not running.")
 
-    @QtCore.pyqtSlot(object)
-    def on_reduced_data(self, result:object) -> None:
+    @QtCore.pyqtSlot(dict)
+    def on_reduced_data(self, data_dict: dict) -> None:
         """Handle the reduced data from the thread."""
         try:
-            pos, data = result
-            self.logger.debug(f"Reduced data: pos{pos} shape {data.shape}")
-            self.reduced_data_history.append((pos,data))
-            self.new_reduced_data.emit(pos,data)
-            self.reduced_data_queue.put((pos,data))
+            pos = data_dict['pos']
+            data = data_dict['data']
+            n = data_dict['data_counter']
+            self.logger.debug(f"Reduced data #{n}: pos{pos} | shape {data.shape} ")
+            self.reduced_data_history.append(data_dict)
+            self.new_reduced_data.emit(data_dict)
+            self.reduced_data_queue.put(data_dict)
         except Exception as e:
             self.logger.error(f"{type(e)} while handling reduced data: {e} \n {traceback.format_exc()}")
             self.error.emit(str(e))
 
     @QtCore.pyqtSlot(tuple)
-    def on_thread_error(self, error: str) -> None:
+    def on_thread_error(self, error: tuple) -> None:
         """Handle the error signal from the thread."""
         exctype, value, traceback_ = error
         self.logger.error(value)
@@ -248,12 +252,17 @@ class SmartScanManager(QtCore.QObject):
         self.logger.error(error)
         self.error.emit(error)
 
-    @QtCore.pyqtSlot(np.ndarray, np.ndarray)
-    def on_new_data(self, pos:np.ndarray, data: np.ndarray) -> None:
+    @QtCore.pyqtSlot(dict)
+    def on_new_data(self, data_dict: dict) -> None:
         """Handle the new_data signal from the data fetcher."""
-        self.logger.debug(f"New data: shape {data.shape} {data.ravel()[:3]} ... {data.ravel()[-3:]}")
-        self.new_raw_data.emit(pos,data)
-        self.raw_data_queue.put((pos,data))
+        pos = data_dict['pos']
+        data = data_dict['data']
+        n = data_dict['data_counter']
+        self.logger.debug(f"Received datapoint {n} | {pos} | {data.shape} | {data.ravel()[:3]} ... {data.ravel()[-3:]}")
+        self.raw_data_history.append(data_dict)
+
+        self.new_raw_data.emit(data_dict)
+        self.raw_data_queue.put(data_dict)
 
     def __del__(self) -> None:
         """Delete the object."""
@@ -333,9 +342,16 @@ class Settings:
         with open(path, 'w') as f:
             yaml.dump(self._settings, f)
 
-def reduce(pos: np.ndarray, data: np.ndarray, settings: dict, logger: logging.Logger) -> np.ndarray:
+def reduce(
+        data_dict:dict, 
+        settings: dict, 
+        logger: logging.Logger
+    ) -> np.ndarray:
     """ reduce data """
-    logger.debug(f"Reducing data: {data.shape}")
+    data = data_dict['data']
+    pos = data_dict['pos']
+    n = data_dict['data_counter']
+    logger.debug(f"Reducing data #{n}: pos{pos} | shape {data.shape} ")
     # t0 = time.time()
     pp = data.copy()
     for _, d in settings["preprocessing"].items():
@@ -367,4 +383,5 @@ def reduce(pos: np.ndarray, data: np.ndarray, settings: dict, logger: logging.Lo
     #         f"and task labels {len(self.task_labels)}."
     #     )
     # logger.debug(f"Reduction {pos} | time: {time.time()-t1:.3f} s")
-    return pos, reduced
+    data_dict['reduced_data'] = reduced
+    return data_dict

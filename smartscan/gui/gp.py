@@ -159,18 +159,16 @@ class GPManager(QtCore.QObject):
         self.running = False
 
     @QtCore.pyqtSlot()
-    def update_data_and_positions(self, pos:np.ndarray, vals:np.ndarray) -> None:
+    def update_data_and_positions(self, data_dict:dict) -> None:
         """Update the data and positions lists."""
-        self.logger.debug("Updating data and positions.")
-        if len(pos) != len(vals):
-            self.logger.error("Length of positions and values do not match.")
-            self.error.emit("Length of positions and values do not match.")
-            return
-        else:
-            self.logger.info(f"Adding {pos} to GP. -> {self.n_points} points")
-            self._has_new_data = True
-            self._positions.append(pos)
-            self._values.append(vals)
+        pos = data_dict["pos"]
+        vals = data_dict["reduced_data"]
+        n = data_dict["data_counter"]
+        self.logger.debug(f"GP: adding point #{n} | {pos} -> {self.n_points} ")
+
+        self._has_new_data = True
+        self._positions.append(pos)
+        self._values.append(vals)
 
         
     def get_taks_normalization_weights(self, update: bool = False) -> np.ndarray:

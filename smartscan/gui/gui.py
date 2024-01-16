@@ -197,15 +197,21 @@ class SmartScanMainWindow(QtWidgets.QMainWindow):
         self.logger.error(error)
         self.statusBar().showMessage(error)
 
-    @QtCore.pyqtSlot(np.ndarray, np.ndarray)
-    def on_raw_data(self, pos: np.ndarray, data: np.ndarray) -> None:
+    @QtCore.pyqtSlot(dict)
+    def on_raw_data(self, data_dict:dict) -> None:
         """Handle new raw data from the scan manager thread."""
-        self.statusBar().showMessage(f"Received raw data: {pos.shape}, {data.shape}")
+        pos = data_dict['pos']
+        data = data_dict['data']
+        n = data_dict['data_counter']
+        self.statusBar().showMessage(f"Received raw data #{n} | {pos} {data.shape}")
 
-    @QtCore.pyqtSlot(np.ndarray, np.ndarray)
-    def on_reduced_data(self, pos: np.ndarray, data: np.ndarray) -> None:
+    @QtCore.pyqtSlot(dict)
+    def on_reduced_data(self, data_dict:dict) -> None:
         """Handle new reduced data from the scan manager thread."""
-        self.statusBar().showMessage(f"Received reduced data: {pos.shape}, {data.shape}")
+        pos = data_dict['pos']
+        data = data_dict['data']
+        n = data_dict['data_counter']        
+        self.statusBar().showMessage(f"Received processed data #{n} | {pos} {data.shape}")
 
     @QtCore.pyqtSlot(dict)
     def on_new_hyperparameters(self, hyperparameters: dict) -> None:

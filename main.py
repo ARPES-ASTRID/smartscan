@@ -102,6 +102,9 @@ if __name__ == "__main__":
     logger.info('Info enabled')
     logger.debug('Debug enabled')
     
+    # suppress user warnings
+    import warnings
+    warnings.simplefilter('ignore', UserWarning)
 
     # numpy compact printing
     np.set_printoptions(precision=3, suppress=True)

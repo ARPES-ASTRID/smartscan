@@ -23,6 +23,7 @@ class SmartScanManager(QtCore.QObject):
     new_reduced_data = QtCore.pyqtSignal(dict)
     new_hyperparameters = QtCore.pyqtSignal(np.ndarray)
     new_points = QtCore.pyqtSignal(np.ndarray)
+    new_plot_dict = QtCore.pyqtSignal(dict)
 
     status = QtCore.pyqtSignal(str)
     finished = QtCore.pyqtSignal()
@@ -140,7 +141,9 @@ class SmartScanManager(QtCore.QObject):
         self.gp_manager.status.connect(self.on_gp_status)
         self.gp_manager.error.connect(self.on_gp_error)
         self.gp_manager.new_points.connect(self.on_new_points)
+        self.gp_manager.new_plot_dict.connect(self.on_new_plot_dict)
         self.gp_manager.new_hyperparameters.connect(self.on_new_hyperparameters)
+        self.gp_manager_thread.finished.connect(self.gp_manager.deleteLater)
         self.gp_manager_thread.started.connect(self.gp_manager.start)
 
         self.logger.debug("Starting GP loop.")
@@ -195,6 +198,11 @@ class SmartScanManager(QtCore.QObject):
         except Exception as e:
             self.logger.error(f"{type(e)} while handling reduced data: {e} \n {traceback.format_exc()}")
             self.error.emit(str(e))
+
+    @QtCore.pyqtSlot(dict)
+    def on_new_plot_dict(self, data_dict: dict) -> None:
+        """ Handle the new_plot_dict signal from the GP loop """
+        self.new_plot_dict.emit(data_dict)
 
     @QtCore.pyqtSlot(tuple)
     def on_thread_error(self, error: tuple) -> None:

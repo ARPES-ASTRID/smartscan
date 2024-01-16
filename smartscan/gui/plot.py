@@ -24,34 +24,27 @@ class MainPlotWidget(QtWidgets.QWidget):
         )
         self.settings = settings
 
-        self.axes = ['x', 'y']
-        self.axes_values = [np.arange(-50,50,1), np.arange(-30,30,1)]
-
         self.tasks = self.settings['tasks'].keys()
-        self.task_panels = []
+        self.task_panels: list[TaskPanel] = []
 
         self.init_ui()
 
-        self.timer = QtCore.QTimer()
-        self.timer.timeout.connect(self.update_plots)
-        self.timer.start(1000)
+        # self.timer = QtCore.QTimer()
+        # self.timer.timeout.connect(self.update_plots)
+        # self.timer.start(1000)
 
-    def update_plots(self) -> None:
-        shape = (len(self.axes_values[0]), len(self.axes_values[1]))
-        data_dict = {
-            "mean": np.random.normal(size=shape),
-            "variance": np.random.normal(size=shape),
-            "axes": self.axes,
-            "axes_values": self.axes_values,
-            "aqf": np.random.normal(size=shape),
-            "positions": np.random.normal(size=(10, 2)),
-        }
-        # data_dict['positions'][:, 0] *= shape[0]
-        # data_dict['positions'][:, 1] *= shape[1]
-        for panel in self.task_panels:
-            panel.update_plots(data_dict)
-        self.aqf_panel.update_plot(data_dict)
+    @QtCore.pyqtSlot(dict)
+    def on_new_plot_dict(self, data_dict:dict) -> None:
+        """ updates the plots with new data
         
+        Args:
+            data_dict (dict): dictionary with data to plot
+        """
+        self.aqf_panel.update_plot(data_dict)
+        for task, panel in zip(self.tasks, self.task_panels):
+            panel.update_plots(data_dict[task])
+        self.logger.info(f"Plots #{data_dict['data_counter']} updated")
+
     def init_ui(self) -> None:
         self.tasks_panel = QtWidgets.QWidget(self)
         self.tasks_panel_layout = QtWidgets.QVBoxLayout(self.tasks_panel)
@@ -106,7 +99,11 @@ class AquisitionFunctionPanel(QtWidgets.QGroupBox):
             ),
             name="Aquisition Function"
         )
-
+        # add color
+        self.image.setColorMap(pg.ColorMap(
+            [0, 0.5, 1],
+            [(0, 0, 0), (255, 255, 255), (255, 0, 0)]
+        ))
         self.image.ui.histogram.show()
         self.image.ui.roiBtn.show()
         self.image.ui.menuBtn.show()
@@ -129,11 +126,11 @@ class AquisitionFunctionPanel(QtWidgets.QGroupBox):
         Args:
             data_dict (dict): dictionary with data to plot
         """
-        self.image.setImage(data_dict["aqf"])
-        self.scatter.setData(
-            data_dict["positions"][:, 0], 
-            data_dict["positions"][:, 1]
-        )
+        self.image.setImage(data_dict["acquisition_function"])
+        # self.scatter.setData(
+        #     data_dict["data"]["positions"][:, 0], 
+        #     data_dict["data"]["positions"][:, 1]
+        # )
 
 
 class TaskPanel(QtWidgets.QGroupBox):

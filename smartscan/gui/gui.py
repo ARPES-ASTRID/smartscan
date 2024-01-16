@@ -33,8 +33,8 @@ class SmartScanMainWindow(QtWidgets.QMainWindow):
 
         self.settings = settings
 
-        self.scan_manager, self.scan_manager_thread = self.init_scan_manager()
         self.plot_widget = self.init_plot_widget()
+        self.scan_manager, self.scan_manager_thread = self.init_scan_manager()
 
         self.create_menu()
         self.create_main_frame()
@@ -186,6 +186,7 @@ class SmartScanMainWindow(QtWidgets.QMainWindow):
         manager.status.connect(self.statusBar().showMessage)
         manager.new_hyperparameters.connect(self.on_new_hyperparameters)
         manager.new_points.connect(self.on_new_points)
+        manager.new_plot_dict.connect(self.on_new_plot_dict)
         manager.finished.connect(self.on_finished)
 
         manager.error.connect(self.on_thread_error)
@@ -217,6 +218,11 @@ class SmartScanMainWindow(QtWidgets.QMainWindow):
         data = data_dict['data']
         n = data_dict['data_counter']        
         self.statusBar().showMessage(f"Received processed data #{n} | {pos} {data.shape}")
+
+    @QtCore.pyqtSlot(dict)
+    def on_new_plot_dict(self, data_dict:dict) -> None:
+        """Handle new plot dict from the scan manager thread."""
+        self.plot_widget.on_new_plot_dict(data_dict)
 
     @QtCore.pyqtSlot(dict)
     def on_new_hyperparameters(self, hyperparameters: dict) -> None:

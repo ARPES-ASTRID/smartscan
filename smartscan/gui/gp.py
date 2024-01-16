@@ -5,6 +5,7 @@ from functools import partial
 from PyQt5 import QtCore
 import numpy as np
 from gpcam.gp_optimizer import fvGPOptimizer
+from sympy import Q, im
 from smartscan.sgm4commands import SGM4Commands
 
 from smartscan.utils import pretty_print_time
@@ -38,6 +39,7 @@ class GPManager(QtCore.QObject):
     """
     new_hyperparameters = QtCore.pyqtSignal(np.ndarray)
     new_points = QtCore.pyqtSignal(np.ndarray)
+    new_plot_dict = QtCore.pyqtSignal(dict)
     finished = QtCore.pyqtSignal()
     status = QtCore.pyqtSignal(str)
     error = QtCore.pyqtSignal(str)
@@ -63,7 +65,8 @@ class GPManager(QtCore.QObject):
         self._input_space_dimension = None
         self._values = []
         self._positions = []
-        self._latest_index = 0
+        self._last_data_index = 0
+        self._last_tell_index = 0
         # flags
         self._has_new_data = False
         self._should_stop = False
@@ -87,7 +90,7 @@ class GPManager(QtCore.QObject):
         Returns:
             list: List of positions.
         """
-        return self._positions
+        return np.asarray(self._positions)
 
     @property
     def values(self) -> np.ndarray:
@@ -96,7 +99,7 @@ class GPManager(QtCore.QObject):
         Returns:
             list: List of values.
         """
-        return self._values
+        return np.asarray(self._values)
 
     @property
     def n_points(self) -> int:
@@ -107,6 +110,17 @@ class GPManager(QtCore.QObject):
         """
         assert len(self.positions) == len(self.values)
         return len(self.positions)
+
+    @property
+    def n_gp_points(self) -> int:
+        """Get the number of points in the GP.
+
+        Returns:
+            int: Number of points in the GP.
+        """
+        if self.gp is None:
+            return 0
+        return self.gp.x_data.shape[0] // self.gp.output_number
 
     @property
     def should_train(self) -> bool:
@@ -169,9 +183,8 @@ class GPManager(QtCore.QObject):
         self._has_new_data = True
         self._positions.append(pos)
         self._values.append(vals)
-        self._latest_index = n
+        self._last_data_index = n
 
-        
     def get_taks_normalization_weights(self, update: bool = False) -> np.ndarray:
         """Get the normalization weights for the tasks.
 
@@ -258,9 +271,12 @@ class GPManager(QtCore.QObject):
         self.logger.debug("Telling GP about new data.")
         self.status.emit("Telling GP")
         if self.gp is not None:
+
+            new = self.n_points - self.n_gp_points
+            self.logger.info(f"GP tell  #{self._last_data_index} | {new} new points | {self.n_points} points | {self.n_gp_points} GP points")
             pos = np.asarray(self.positions)
             vals = np.asarray(self.values)
-            self.last_tell_index = self._latest_index
+            self._last_tell_index = self._last_data_index
             if self.settings["scanning"]["normalize_values"] == "always":
                 vals = vals * self.get_taks_normalization_weights(update=True)
             elif self.settings["scanning"]["normalize_values"] != "never":
@@ -324,9 +340,9 @@ class GPManager(QtCore.QObject):
             for point in next_pos:
                 rounded_point = closest_point_on_grid(point, axes=self.remote.axes)
                 self.remote.ADD_POINT(*rounded_point)
-                self.logger.info(f"ASK      #{self.last_tell_index}) Added {rounded_point} to scan. Rounded from {point}")
+                self.logger.info(f"GP ask   #{self._last_tell_index} | {rounded_point} <- {point}")
                 self.new_points.emit(rounded_point)
-
+            self.update_plot_dict()
 
     def update(self) -> None:
         """Update the GP loop."""
@@ -348,30 +364,121 @@ class GPManager(QtCore.QObject):
             self.iter_counter += 1
             self._has_new_data = False
 
-    # def run(self) -> None:
-    #     """Run the GP loop."""
-    #     self.logger.debug("Starting GP loop.")
-    #     self._should_stop = False
-    #     self.iter_counter = 0
-    #     self.hyperparameter_history = {}
-    #     self._running = True
-    #     while self._running:
-    #         if self._should_stop:
-    #             self.logger.debug("Stopping GP loop.")
-    #             self._running = False
-    #             break
-    #         elif self._has_new_data:
-    #             self.logger.debug(f"GP loop iteration {self.iter_counter}")
-    #             self.status.emit(f"GP loop iteration {self.iter_counter}")
-    #             if self.gp is None:
-    #                 self.start()
-    #             self.tell()
-    #             if self.should_train():
-    #                 self.train()
-    #             self.ask()
-    #             self.iter_counter += 1
-    #     self.logger.debug("GP loop finished.")
-    #     self.finished.emit()
-    #     self.status.emit("Finished")
+    @property
+    def plot_image_shape(self) -> tuple:
+        img_shape = self.settings["plots"]["posterior_map_shape"]
+        if img_shape == "full":
+            img_shape = self.remote.map_shape
+        elif img_shape == "auto":
+            img_shape = self.remote.map_shape
+            ratio = img_shape[0] / img_shape[1]
+            if ratio > 1:
+                img_shape = (40, int(40 / ratio))
+            else:
+                img_shape = (int(40 * ratio), 40)
+        elif isinstance(img_shape, str):
+            img_shape = tuple(int(n) for n in img_shape.split("x"))
+        elif isinstance(img_shape, list):
+            img_shape = tuple(img_shape)
+        if np.prod(img_shape) > 1e4:
+            self.logger.warning(f"Plot image shape {img_shape} is too big. Setting to (50,50)")
+            img_shape = (50,50)
+        return tuple(np.abs(s) for s in img_shape)
+    
+    def get_full_x_pred(self, task_index:int) -> np.ndarray:
+        """Get the full prediction grid.
 
+        Returns:
+            np.ndarray: Full prediction grid.
+        """
+        self.logger.debug("Getting full prediction grid.")
+        self.status.emit("Getting full prediction grid")
 
+        x_start, x_stop = sorted(self.remote.limits[0])
+        y_start, y_stop = sorted(self.remote.limits[1])
+        shape = self.plot_image_shape
+        x_axis = np.linspace(x_start, x_stop, shape[0])
+        y_axis = np.linspace(y_start, y_stop, shape[1])
+        X,Y = np.meshgrid(x_axis, y_axis)
+        Xf,Yf = X.flatten(), Y.flatten()
+        all_positions = np.array([Xf,Yf,task_index*np.ones(Xf.size)]).T
+        return all_positions
+    
+    def get_posterior_imgs(self) -> np.ndarray:
+        """Get the posterior image of the GP.
+
+        Returns:
+            np.ndarray: Posterior image.
+        """
+        self.logger.debug("Getting posterior image.")
+        self.status.emit("Getting posterior image")
+        if self.gp is None:
+            self.logger.warning("GP not initialized. Cannot draw posterior map.")
+            return 
+
+        posteriors = {}
+        shape = self.plot_image_shape
+        for i, t in enumerate(self.task_labels):
+            x_pred = self.get_full_x_pred(i)
+            mean = np.reshape(self.gp.posterior_mean(x_pred)["f(x)"], shape[::-1])
+            variance = np.reshape(self.gp.posterior_covariance(x_pred, variance_only=True)["v(x)"], shape[::-1])
+            self.logger.debug(f"Posterior map for task {t} with shape {mean.shape} created.")
+            posteriors[t] = {
+                'mean': mean,
+                'variance': variance,
+            }
+        return posteriors
+
+    def get_acquisition_function_img(self, posteriors: dict=None) -> np.ndarray:
+        """Get the acquisition function image of the GP.
+
+        Returns:
+            np.ndarray: Acquisition function image.
+        """
+        self.logger.debug("Getting acquisition function image.")
+        self.status.emit("Getting acquisition function image")
+        if self.gp is None:
+            self.logger.warning("GP not initialized. Cannot draw acquisition function.")
+            return
+        
+        a = self.settings['acquisition_function']['params']['a']
+        norm = self.settings['acquisition_function']['params']['norm']
+        if posteriors is None:
+            posteriors = self.get_posterior_imgs()
+        variance = np.zeros_like(posteriors[self.task_labels[0]]['variance'])
+        for t in self.task_labels:
+            variance += posteriors[t]['variance']
+        mean = np.zeros_like(posteriors[self.task_labels[0]]['mean'])
+        for t in self.task_labels:
+            mean += posteriors[t]['mean']
+        acquisition_function = norm * (mean + a * np.sqrt(variance))
+        return acquisition_function
+    
+    @QtCore.pyqtSlot()
+    def update_plot_dict(self) -> dict:
+        """Get the plot dictionaries.
+
+        Returns:
+            dict: Plot dictionaries.
+        """
+        self.logger.debug("Getting plot dictionaries.")
+        self.status.emit("Getting plot dictionaries")
+        t0 = time.time()
+        if self.gp is None:
+            self.logger.warning("GP not initialized. Cannot draw plots.")
+            return
+        plot_dicts = {}
+        plot_dicts = self.get_posterior_imgs()
+        plot_dicts["acquisition_function"] = self.get_acquisition_function_img(plot_dicts)
+        plot_dicts["gp_counter"] = self.iter_counter
+        plot_dicts["data_counter"] = self._last_tell_index
+        plot_dicts["data"] = {
+            "positions": self.positions,
+            "values": self.values,
+        }
+        plot_dicts["img_creation_time"] = time.time() - t0
+        if plot_dicts["img_creation_time"] > 0.5:
+            self.logger.warning(f"Posterior plots #{self._last_tell_index} | {plot_dicts['acquisition_function'].shape} | {plot_dicts['img_creation_time']:.3f} seconds")
+        else:
+            self.logger.debug(f"Posterior plots #{self._last_tell_index} | {plot_dicts['acquisition_function'].shape} | {plot_dicts['img_creation_time']:.3f} seconds")
+        self.new_plot_dict.emit(plot_dicts)

@@ -15,7 +15,7 @@ def main_asyncio(settings) -> None:
     from smartscan import AsyncScanManager
 
     # init scan manager
-    scan_manager = AsyncScanManager(settings=parsed_args.settings, logger=logger)
+    scan_manager = AsyncScanManager(settings=settings, logger=logger)
     # start scan manager
     try:
         loop = asyncio.get_event_loop()

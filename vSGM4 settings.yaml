@@ -5,7 +5,7 @@ TCP:
   timeout: 10 # seconds
 
 logging:
-  level: info
+  level: debug
   directory: null
   formatter: '%(asctime)s - %(name)s - %(levelname)s | %(message)s'
 

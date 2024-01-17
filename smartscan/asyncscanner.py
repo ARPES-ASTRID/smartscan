@@ -530,7 +530,8 @@ class AsyncScanManager:
                         )
                         self._should_stop = True
                         break
-                    self.gp.cost_function_parameters.update({'prev_points': self.gp.x_data,})
+                    if self.gp.cost_function_parameters is not None:
+                        self.gp.cost_function_parameters.update({'prev_points': self.gp.x_data,})
                     answer = self.gp.ask(
                         acquisition_function=aqf,
                         x0 = missing_positions,
@@ -570,6 +571,7 @@ class AsyncScanManager:
                     val=np.asarray(self.values),
                     old_aqf=aqf,
                     last_spectrum=self.last_spectrum,
+                    settings=self.settings,
                 )
                 plt.pause(0.01)
             else:

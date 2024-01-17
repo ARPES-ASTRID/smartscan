@@ -24,9 +24,10 @@ def plot_acqui_f(
         fig, 
         pos, 
         val, 
-        shape=(50,50), 
+        shape=None, 
         old_aqf = None, 
         last_spectrum = None,
+        settings = None,
     ):
     """ Plot the acquisition function of a GP
     
@@ -39,7 +40,8 @@ def plot_acqui_f(
 
     positions, values = gp.x_data, gp.y_data
 
-
+    if shape is None:
+        shape = settings["plots"]["posterior_map_shape"]
     x_pred_0 = np.empty((np.prod(shape),3))
     x_pred_1 = np.empty((np.prod(shape),3))
     counter = 0
@@ -74,10 +76,12 @@ def plot_acqui_f(
     PV1 = np.reshape(gp.posterior_covariance(x_pred_1)["v(x)"],shape)
     sPV1 = np.sqrt(PV1)
     
-    a = 1.0
-    norm = 2.0
-
-    aqf = a * np.sqrt(PV0+PV1) + norm * (PM0 + PM1)
+    a = settings["acquisition_function"]["params"]["a"]
+    norm = settings["acquisition_function"]["params"]["norm"]
+    w = settings["acquisition_function"]["params"]["weights"]
+    if w is None:
+        w = (1,1)
+    aqf = norm * (a * np.sqrt(w[0]*PV0+w[1]*PV1) +(w[0]*PM0 + w[1]*PM1))
     aqf = np.rot90(aqf,k=-1)[:,::-1]
 
     # fig,ax=plt.subplots(3,1,figsize=(8,6))
@@ -114,18 +118,19 @@ def plot_acqui_f(
         PM /= pmmax
         PV /= pvmax
         
-        ax[i,0].imshow(PM, clim=[0,1], extent=[*lim_x,*lim_y], origin='lower')
+        ax[i,0].imshow(PM, clim=[0,1], extent=[*lim_x,*lim_y], origin='lower', aspect="equal")
         ax[i,0].set_title(f'PM: {pmmax:.3f}')
-        ax[i,1].imshow(PV, clim=[0,1], extent=[*lim_x,*lim_y], origin='lower')
-        ax[i,1].set_title(f'PV: {pvmax:.3f}')
+        ax[i,1].imshow(PV, clim=[0,1], extent=[*lim_x,*lim_y], origin='lower', aspect="equal")
+        ax[i,1].set_title(f'PV: {a * np.sqrt(pvmax):.3f}')
 
         ax[i,0].scatter(positions[:,0],positions[:,1], s=20,c='r')
         ax[i,1].scatter(positions[:,0],positions[:,1], s=20,c='r')
         ax[i,0].scatter(positions[-1,0],positions[-1,1], s=30,c='white')
         ax[i,1].scatter(positions[-1,0],positions[-1,1], s=30,c='white')
 
-
+    ax[0,2].imshow(np.zeros_like(PM), clim=[0,1], extent=[*lim_x,*lim_y], origin='lower', aspect="equal")
     ax[0,2].scatter(pos[:,0],pos[:,1],s = 25, c=val[:,0],cmap='viridis', marker='o')
+    ax[1,2].imshow(np.zeros_like(PM), clim=[0,1], extent=[*lim_x,*lim_y], origin='lower', aspect="equal")
     ax[1,2].scatter(pos[:,0],pos[:,1],s = 25, c=val[:,1],cmap='viridis', marker='o')
     ax[0,2].scatter(pos[-1,0],pos[-1,1],s = 25, c='r', marker='o')
     ax[1,2].scatter(pos[-1,0],pos[-1,1],s = 25, c='r', marker='o')
@@ -135,7 +140,8 @@ def plot_acqui_f(
         aqf,
         extent=[*lim_x,*lim_y], 
         origin='lower',
-        clim=np.quantile(aqf,(0.01,0.99))
+        clim=np.quantile(aqf,(0.01,0.99)), 
+        aspect="equal",
     )
     if old_aqf is not None:
         diff = old_aqf - aqf
@@ -144,10 +150,11 @@ def plot_acqui_f(
             diff,
             extent=[*lim_x,*lim_y], 
             origin='lower',
-            cmap='bwr'
+            cmap='bwr',
+            aspect="equal"
         ) 
     if last_spectrum is not None:
-        ax[2,2].imshow(last_spectrum, clim=np.quantile(last_spectrum,(0.02,0.98)), origin='lower', cmap='terrain')
+        ax[2,2].imshow(last_spectrum, clim=np.quantile(last_spectrum,(0.02,0.98)), origin='lower', cmap='terrain', aspect="equal")
     # ax[i,0].figure.canvas.draw()
     # ax[i,1].figure.canvas.draw()
 

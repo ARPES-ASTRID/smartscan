@@ -7,10 +7,19 @@ TCP:
 logging:
   level: INFO
   directory: null
-  formatter: '%(asctime)s - %(name)s - %(levelname)s | %(message)s'
+  formatter: '%(asctime)s - %(name)-20s | %(levelname)-8s | %(message)s'
 
 paths:
   data: './data'
+
+core: # in milliseconds
+  n_threads: 4
+  master_clock: 500 # ms
+  fetch_data_clock: 50 # ms
+  # process_data_clock: 50 # ms
+
+plots:
+  posterior_map_shape: [50,50] #full #"auto"
 
 scanning:
   max_points: 499 # 0 for unlimited
@@ -30,8 +39,8 @@ preprocessing:
   roi:
     function: roi # name of the function found in gp/preprocessing.py
     params: 
-      x_lim: [0,-1] # parameters of the function  
-      y_lim: [0,-1]
+      x_lim: [75,175] # parameters of the function  
+      y_lim: [10,-10]
 
 tasks: # list of tasks to which to reduce the data
   mean: # name of the task found in gp/tasks.py
@@ -49,7 +58,7 @@ tasks: # list of tasks to which to reduce the data
 acquisition_function:
   function: acquisition_function_nd # name of the function found in gp/acquisition_functions.py
   params:
-    a: 3.0 # exploration vs exploitation, i.e. variance weight
+    a: 0.2 # exploration vs exploitation, i.e. variance weight
     weights: null
     norm: 1 # normalization factor for acquisition function
     c: 0 # covariance weight

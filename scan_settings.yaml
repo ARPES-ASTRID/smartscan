@@ -22,7 +22,7 @@ plots:
   posterior_map_shape: [50,50] #full #"auto"
 
 scanning:
-  max_points: 499 # 0 for unlimited
+  max_points: 3000 # 0 for unlimited
   duration: 1_000_000
   train_at: [10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000]
   train_every: 0 # 0 for no training
@@ -39,7 +39,7 @@ preprocessing:
   roi:
     function: roi # name of the function found in gp/preprocessing.py
     params: 
-      x_lim: [75,175] # parameters of the function  
+      x_lim: [35,175] # parameters of the function  
       y_lim: [10,-10]
 
 tasks: # list of tasks to which to reduce the data
@@ -58,7 +58,7 @@ tasks: # list of tasks to which to reduce the data
 acquisition_function:
   function: acquisition_function_nd # name of the function found in gp/acquisition_functions.py
   params:
-    a: 0.2 # exploration vs exploitation, i.e. variance weight
+    a: 0.1 # exploration vs exploitation, i.e. variance weight
     weights: null
     norm: 1 # normalization factor for acquisition function
     c: 0 # covariance weight

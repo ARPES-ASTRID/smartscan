@@ -570,6 +570,7 @@ class AsyncScanManager:
                     val=np.asarray(self.values),
                     old_aqf=aqf,
                     last_spectrum=self.last_spectrum,
+                    settings=self.settings,
                 )
                 plt.pause(0.01)
             else:

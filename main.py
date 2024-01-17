@@ -65,11 +65,11 @@ if __name__ == "__main__":
 
     # init logger
     # logger.setLevel("DEBUG")#settings["logging"]["level"])
-    logging.root.setLevel(settings["logging"]["level"])
+    logging.root.setLevel(settings["logging"]["level"].upper())
     formatter = ColoredFormatter(settings["logging"]["formatter"])
 
     sh = logging.StreamHandler()
-    sh.setLevel(settings["logging"]["level"])
+    sh.setLevel(settings["logging"]["level"].upper())
     sh.setFormatter(formatter)
     logging.root.addHandler(sh)
 

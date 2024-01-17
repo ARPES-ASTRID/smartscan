@@ -18,6 +18,9 @@ core: # in milliseconds
   fetch_data_clock: 50 # ms
   # process_data_clock: 50 # ms
 
+plots:
+  posterior_map_shape: "auto"
+  
 scanning:
   max_points: 499 # 0 for unlimited
   duration: 1_000_000

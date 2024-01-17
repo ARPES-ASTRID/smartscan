@@ -49,7 +49,7 @@ if __name__ == "__main__":
         "--settings", type=str, default="scan_settings.yaml", help="Settings file"
     )
     parser.add_argument(
-        "--gui", default= True,action="store_true", help="Start as GUI"
+        "--gui", default=False, action="store_true", help="Start as GUI"
     )
     # parser.add_argument('--loglevel',   type=str, default='DEBUG', help='Log level')
     # parser.add_argument('--logdir',     type=str, default=None, help='Log directory')

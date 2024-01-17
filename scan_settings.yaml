@@ -7,7 +7,7 @@ TCP:
 logging:
   level: INFO
   directory: null
-  formatter: '%(asctime)s - %(name)-20s | %(levelname)-8s | %(message)s'
+  formatter: '%(asctime)s | %(name)s | %(levelname)-8s | %(message)s'
 
 paths:
   data: './data'
@@ -67,9 +67,10 @@ cost_function:
   function: manhattan_avoid_repetition # name of the function found in gp/cost_functions.py
   params: 
     speed: 300 # um/s
-    dwell_time: 1 # seconds
-    dead_time: 0.6 # seconds
-    weight: 0.1 # weight of the cost function
+    dwell_time: 2 # seconds
+    dead_time: 0.1 # seconds
+    min_distance: 4.99 # This should always be just below the step size of the scanner
+    weight: 1 # weight of the cost function
 
 gp:
   optimizer:

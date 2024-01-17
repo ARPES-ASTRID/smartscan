@@ -72,7 +72,6 @@ def movement_cost(
 def compute_costs(
         origin: Sequence[tuple], 
         x: Sequence[tuple], 
-        cost_func: Callable = movement_cost,
         cost_func_params: dict = None, 
         verbose=False,
         logger=None,
@@ -104,6 +103,7 @@ def manhattan_cost_function(
         origin: np.ndarray[float],
         x: Sequence[Tuple[float,float]],
         cost_func_params: dict[str, Any] = None,
+        logger=None,
     ) -> float:
     """Compute the movement cost between two points
 
@@ -121,6 +121,9 @@ def manhattan_cost_function(
     Returns:
         float: movement cost
     """
+    if logger is None:
+        logger = logging.getLogger('manhattan_cost_function')
+
     origin = np.array(origin)
     assert origin.shape[0] == 2, "origin must be a 2D point"
 
@@ -140,13 +143,17 @@ def manhattan_cost_function(
     point_to_um = cost_func_params.get('point_to_um',1.0)
     weight = cost_func_params.get('weight',1.0)
 
-    if any([k not in ['speed','dwell_time','dead_time','point_to_um','weight'] 
-            for k in cost_func_params.keys()]):
-        raise ValueError(f"Unrecognized parameters: {cost_func_params.keys()}")
+    unrecognized = [k for k in cost_func_params.keys() if k not in ['speed','dwell_time','dead_time','point_to_um','weight']]
+
+    if len(unrecognized) > 0:
+        logger.warning(f"Unrecognized parameters: {unrecognized}")
+
+    # logger.debug(f"Parameters: speed={speed}, dwell_time={dwell_time}, dead_time={dead_time}, point_to_um={point_to_um}, weight={weight}")
     times = np.zeros(x.shape[0])
     for i in range(x.shape[0]):
         distance = manhattan_distance(origin,x[i,:]) * point_to_um
         times[i] = weight * distance / speed  + dwell_time + dead_time
+    logger.debug(f"Times: {min(times):.3f} - {max(times):.3f} ")
     return times
 
 def manhattan_avoid_repetition(
@@ -155,13 +162,17 @@ def manhattan_avoid_repetition(
         cost_func_params: dict[str, Any] = None,
     ) -> float:
     """Avoid repeating the same point twice and compute the movement cost between two points"""
+    logger = logging.getLogger('manhattan_avoid_repetition')
     min_distance = cost_func_params.pop('min_distance',1.0)
     gp_x_data:np.ndarray = cost_func_params.pop('prev_points',np.empty((0,2)))
     
     prev_points = gp_x_data[:,:2]
 
     if prev_points.shape[0] > 0:
-        all_distances = np.linalg.norm(x-prev_points)
-        if np.any(all_distances < min_distance):
-            return [1_000_000_000]
+        for xx in x:
+            all_distances = np.linalg.norm(xx-prev_points)
+            if np.any(all_distances < min_distance):
+                idx = np.argmin(all_distances - min_distance)
+                logger.warning(f"Point {np.asarray(xx).ravel()} close to previous point {prev_points[idx]}: d={all_distances[idx]}")
+                return [1_000_000_000]
     return manhattan_cost_function(origin,x,cost_func_params)

@@ -17,6 +17,9 @@ if __name__ == '__main__':
 
     file_name = settings['data']['file_name']
     data_dir = Path(settings['data']['data_dir'])
+    if not data_dir.exists():
+        data_dir = Path("F" + str(data_dir)[1:])
+    assert data_dir.exists(), f'Data directory {data_dir} does not exist!'
     source_file = (data_dir / f'{file_name}').with_suffix('.h5')
     assert source_file.exists(), f'File {source_file} does not exist!'
 

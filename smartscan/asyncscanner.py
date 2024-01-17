@@ -110,7 +110,7 @@ class AsyncScanManager:
         self.values: List = []
         self.hyperparameter_history = {}
         self.task_weights = None  # for fixed task weights
-
+        self.last_asked_position = None
         # init plotting
         self.replot: bool = False
         self.last_spectrum = None
@@ -174,6 +174,7 @@ class AsyncScanManager:
             x = p[0] * self.remote.limits[0][1] + (1 - p[0]) * self.remote.limits[0][0]
             y = p[1] * self.remote.limits[1][1] + (1 - p[1]) * self.remote.limits[1][0]
             self.remote.ADD_POINT(x, y)
+            self.last_asked_position = (x,y)
             self.logger.debug(f"Added point {p} to scan.")
 
     def connect(self) -> None:
@@ -532,9 +533,13 @@ class AsyncScanManager:
                         break
                     if self.gp.cost_function_parameters is not None:
                         self.gp.cost_function_parameters.update({'prev_points': self.gp.x_data,})
+                    if self.last_asked_position is None:
+                        self.last_asked_position = self.positions[-1]
+                    self.logger.debug(f"ASK: Last asked position: {self.last_asked_position}")
                     answer = self.gp.ask(
+                        position = np.array(self.last_asked_position),
                         acquisition_function=aqf,
-                        x0 = missing_positions,
+                        # x0 = missing_positions,
                         **ask_pars
                     )
                     next_pos = answer["x"]
@@ -542,6 +547,8 @@ class AsyncScanManager:
                         rounded_point = closest_point_on_grid(point, axes=self.remote.axes)
                         self.remote.ADD_POINT(*rounded_point)
                         self.logger.info(f"ASK             | Added {rounded_point} to scan. rounded from {point}")
+                        self.last_asked_position = rounded_point
+
                     self.replot = True
             else:
                 self.logger.debug("No data to update.")

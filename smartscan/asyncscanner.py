@@ -522,6 +522,7 @@ class AsyncScanManager:
         self.remote.END()
 
     def ask_gp(self) -> None:
+        """Ask the GP for the next position."""
         acq_func_callable = getattr(
             aquisition_functions,
             self.settings["acquisition_function"]["function"],
@@ -550,13 +551,8 @@ class AsyncScanManager:
                 self.logger.warning(
                 f"ASK GP          | Point {rounded_point} already evaluated!"
                 )
-            # else:
             self.remote.ADD_POINT(*rounded_point)
             self.last_asked_position = rounded_point
-            # break
-        # else:
-        #     self.logger.warning(f"ASK GP          | No valid point found!")
-        #     return False 
         return True
 
     def in_positions(self, pos:np.ndarray) -> bool:

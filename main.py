@@ -51,11 +51,6 @@ if __name__ == "__main__":
     parser.add_argument(
         "--gui", default=False, action="store_true", help="Start as GUI"
     )
-    # parser.add_argument('--loglevel',   type=str, default='DEBUG', help='Log level')
-    # parser.add_argument('--logdir',     type=str, default=None, help='Log directory')
-    # parser.add_argument('--duration',   type=int, default=None, help='Duration of the scan in seconds')
-    # parser.add_argument('--train_at',   type=int, default=None, help='Train GP at these number of samples')
-    # parser.add_argument('--train_every',type=int, default=None, help='Train GP every n samples')
     parsed_args = parser.parse_args()
 
     # load settings from json file

@@ -1,3 +1,5 @@
+from fileinput import filename
+from re import T
 from typing import Callable, Sequence, Tuple, Union, List, Any
 from numpy.typing import NDArray, ArrayLike
 from pathlib import Path
@@ -185,7 +187,18 @@ class AsyncScanManager:
             self.logger.info(
                 f"Axes: {[a.shape for a in self.remote.axes]} | Limits: {self.remote.limits} | Step size: {self.remote.step_size} "
             )
-        
+    
+    @property
+    def filename(self) -> Path:
+        """Get the file stem."""
+        filename: Path = Path(self.remote.filename)
+        folder: Path = filename.parent
+        if not filename.exists():
+            if not folder.exists():
+                raise FileNotFoundError(f"Folder {folder} does not exist.")
+        self.logger.debug(f"Saving settings to {folder}.")
+        return filename
+    
     def save_settings(
         self,
     ) -> Path:
@@ -201,13 +214,8 @@ class AsyncScanManager:
         Returns:
             Path: _description_
         """
-        filename: Path = Path(self.remote.filename)
-        folder: Path = filename.parent
-        if not filename.exists():
-            if not folder.exists():
-                raise FileNotFoundError(f"Folder {folder} does not exist.")
-        self.logger.debug(f"Saving settings to {folder}.")
-        target = filename.with_suffix(".yaml")
+        
+        target = self.filename.with_suffix(".yaml")
         # i = 0
         if not target.exists():
         # while target.exists():
@@ -567,7 +575,7 @@ class AsyncScanManager:
         self.logger.info("Starting plotting loop.")
         await asyncio.sleep(1)  # wait a bit before starting
         self.logger.info("starting plotting tool loop")
-        fig = None
+        self.fig = None
         aqf = None
         while not self._should_stop:
             if self.replot:
@@ -575,13 +583,14 @@ class AsyncScanManager:
                 self.logger.debug("Plotting...")
                 fig, aqf = plot.plot_acqui_f(
                     gp=self.gp,
-                    fig=fig,
+                    fig=self.fig,
                     pos=np.asarray(self.positions),
                     val=np.asarray(self.values),
                     old_aqf=aqf,
                     last_spectrum=self.last_spectrum,
                     settings=self.settings,
                 )
+                self.fig = fig
                 plt.pause(0.01)
             else:
                 await asyncio.sleep(0.2)
@@ -637,8 +646,12 @@ class AsyncScanManager:
             self.stop()
 
     def __del__(self):
+        self.logger.critical("Deleted instance. scan stopping")
         try:
-            self.logger.error("Deleted instance. scan stopping")
+            self.fig.savefig(self.filename.with_suffix(".pdf"))
+        except Exception as e:
+            self.logger.error(f"{type(e)} saving figure: {e}")
+        try:
             self.remote.END()
         except:
             self.logger.error("Deleted instance, but there was no scan to stop")

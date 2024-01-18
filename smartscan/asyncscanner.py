@@ -389,6 +389,7 @@ class AsyncScanManager:
                 vals = vals * self.get_taks_normalization_weights(update=True)
             elif self.settings["scanning"]["normalize_values"] != "never":
                 vals = vals * self.get_taks_normalization_weights(update=update_normalization)
+            self.logger.info(f"TELL GP | pos: {pos[-1]} | tasks: {vals[-1]}")
             self.gp.tell(pos, vals)
 
     # GP loop
@@ -510,45 +511,9 @@ class AsyncScanManager:
                     if retrain:
                         self.train_gp()
 
-                    acq_func_callable = getattr(
-                        aquisition_functions,
-                        self.settings["acquisition_function"]["function"],
-                    )
-                    acq_func_params = self.settings["acquisition_function"]["params"]
-                    aqf = partial(acq_func_callable, **acq_func_params)
-
-                    ask_pars = self.settings["gp"]["ask"]
-                    all_positions = self.remote.all_positions
-                    visited_positions = np.unique(self.positions)
-                    missing_positions = np.setdiff1d(all_positions,visited_positions)
-                    self.logger.debug(
-                        f"Positions evaluated: {len(visited_positions)}/{len(all_positions)} | "
-                        f"{len(visited_positions)/len(all_positions):.2%}"
-                    )
-                    if len(missing_positions) == 0:
-                        self.logger.info(
-                            "No more positions to evaluate. Ending scan."
-                        )
-                        self._should_stop = True
+                    success = self.ask_gp()
+                    if not success:
                         break
-                    if self.gp.cost_function_parameters is not None:
-                        self.gp.cost_function_parameters.update({'prev_points': self.gp.x_data,})
-                    if self.last_asked_position is None:
-                        self.last_asked_position = self.positions[-1]
-                    self.logger.debug(f"ASK: Last asked position: {self.last_asked_position}")
-                    answer = self.gp.ask(
-                        position = np.array(self.last_asked_position),
-                        acquisition_function=aqf,
-                        # x0 = missing_positions,
-                        **ask_pars
-                    )
-                    next_pos = answer["x"]
-                    for point in next_pos:
-                        rounded_point = closest_point_on_grid(point, axes=self.remote.axes)
-                        self.remote.ADD_POINT(*rounded_point)
-                        self.logger.info(f"ASK             | Added {rounded_point} to scan. rounded from {point}")
-                        self.last_asked_position = rounded_point
-
                     self.replot = True
             else:
                 self.logger.debug("No data to update.")
@@ -556,6 +521,47 @@ class AsyncScanManager:
 
         self.remote.END()
 
+    def ask_gp(self) -> None:
+        acq_func_callable = getattr(
+            aquisition_functions,
+            self.settings["acquisition_function"]["function"],
+        )
+        acq_func_params = self.settings["acquisition_function"]["params"]
+        aqf = partial(acq_func_callable, **acq_func_params)
+
+        ask_pars = self.settings["gp"]["ask"]
+
+        if self.gp.cost_function_parameters is not None:
+            self.gp.cost_function_parameters.update({'prev_points': self.gp.x_data})
+        if self.last_asked_position is None:
+            self.last_asked_position = self.positions[-1]
+        self.logger.debug(f"ASK: Last asked position: {self.last_asked_position}")
+        next_pos = self.gp.ask(
+            position=np.array(self.last_asked_position),
+            acquisition_function=aqf,
+            **ask_pars
+        )["x"]
+        for point in next_pos:
+            rounded_point = closest_point_on_grid(point, axes=self.remote.axes)
+            self.logger.info(
+                f"ASK GP          | Adding {rounded_point} to scan. rounded from {point}"
+            )
+            if any([all(rounded_point == prev) for prev in self.pos_array]):
+                self.logger.warning(
+                f"ASK GP          | Point {rounded_point} already evaluated!"
+                )
+            # else:
+            self.remote.ADD_POINT(*rounded_point)
+            self.last_asked_position = rounded_point
+            # break
+        # else:
+        #     self.logger.warning(f"ASK GP          | No valid point found!")
+        #     return False 
+        return True
+
+    def in_positions(self, pos:np.ndarray) -> bool:
+        """ check if the given position is in the positions list."""
+        return np.any(np.all(np.isclose(self.pos_array, pos), axis=1))
     # plotting loop
     async def plotting_loop(self) -> None:
         """Plotting loop.

@@ -559,7 +559,7 @@ class AsyncScanManager:
         """ check if the given position is in the positions list."""
         return np.any(np.all(np.isclose(self.pos_array, pos), axis=1))
     # plotting loop
-    async def plotting_loop(self) -> None:
+    async def old_plotting_loop(self) -> None:
         """Plotting loop.
 
         This loop is responsible for plotting the data.
@@ -587,7 +587,25 @@ class AsyncScanManager:
                 await asyncio.sleep(0.2)
             # if fig is not None and self.iter_counter % self.settings['plot']['save_every'] == 0:
             #     fig.savefig(f'../results/{self.remote.filename.with_suffix("pdf").name}')
-
+    async def plotting_loop(self) -> None:
+        """ plotting loop. refreshing the figure"""
+        self.logger.info("Starting plotting loop.")
+        await asyncio.sleep(1)
+        self.logger.info("starting plotting tool loop")
+        plotter = plot.Plotter(self.settings)
+        while not self._should_stop: 
+            if self.replot:
+                self.replot = False
+                self.logger.debug("Plotting...")
+                plotter.update(
+                    gp=self.gp,
+                    positions=np.asarray(self.positions),
+                    values=np.asarray(self.values),
+                    last_spectrum=self.last_spectrum,
+                )
+            else:
+                plt.pause(0.01)
+                await asyncio.sleep(0.2)
     # all loops and initialization
     async def all_loops(self) -> None:
         """
@@ -646,4 +664,5 @@ class AsyncScanManager:
 
 
 if __name__ == "__main__":
+    
     pass

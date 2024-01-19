@@ -13,35 +13,88 @@ import yaml
 from smartscan.utils import ColoredFormatter
 from smartscan import AsyncScanManager
 
+
+batched = False
+
+
 def batches(settings,logger) -> None:
 
-    # ~~~ BATCH 1 ~~~
-    logger.info('Starting batch run #1')
-    # settings['scanning']['max_points'] = 500
-    settings['acquisition_function']['params']['a'] = 0.05
-    settings['cost_function']['params']['weight'] = 0.01
+    iter_values =  ['init','always', 'never']
 
+    for i,val in enumerate(iter_values):
+        logger.info(f'Starting batch run #{i}')
+        # ~~~batch~~~~
+        settings['scanning']['normalize_values'] = val
+        run_asyncio(settings)
+        # ~~~~~~~~~~
+        logger.info('Waiting 30s before starting a new scan...')
+        time.sleep(30)
+    settings['scanning']['normalize_values'] = "training"
+
+    # training batch
+    settings['training']['pop_size'] = 40
+    settings['training']['max_iter'] = 2
+    settings['training']['tolerance'] = 1e-6
     run_asyncio(settings)
-
+    # ~~~~~~~~~~
     logger.info('Waiting 30s before starting a new scan...')
     time.sleep(30)
 
-    # ~~~ BATCH 2 ~~~
-    logger.info('Starting batch run #2')
-    settings['acquisition_function']['params']['a'] = 0.1
-    settings['cost_function']['params']['weight'] = 0.01
 
+    settings['training']['pop_size'] = 20
+    settings['training']['max_iter'] = 10
+    settings['training']['tolerance'] = 1e-6
     run_asyncio(settings)
-
+    # ~~~~~~~~~~
     logger.info('Waiting 30s before starting a new scan...')
     time.sleep(30)
 
+    settings['training']['pop_size'] = 20
+    settings['training']['max_iter'] = 4
+    settings['training']['tolerance'] = 1e-8
+    run_asyncio(settings)
+    # ~~~~~~~~~~
+    logger.info('Waiting 30s before starting a new scan...')
+    time.sleep(30)
+
+    settings['training']['pop_size'] = 20
+    settings['training']['max_iter'] = 4
+    settings['training']['tolerance'] = 1e-8
+    run_asyncio(settings)
+    # ~~~~~~~~~~
+    logger.info('Waiting 30s before starting a new scan...')
+    time.sleep(30)
+
+    settings['training']['pop_size'] = 40
+    settings['training']['max_iter'] = 10
+    settings['training']['tolerance'] = 1e-8
+    run_asyncio(settings)
+    # ~~~~~~~~~~
+    logger.info('Waiting 30s before starting a new scan...')
+    time.sleep(30)
+
+    # covariance runs
+
+    settings['training']['pop_size'] = 20
+    settings['training']['max_iter'] = 2
+    settings['training']['tolerance'] = 1e-6
+    vals = [0.01,0.1,1,10]
+    for v in vals:
+        settings['acquisition_function']['params']['c'] = v
+        run_asyncio(settings)
+        # ~~~~~~~~~~
+        logger.info('Waiting 30s before starting a new scan...')
+        time.sleep(30)
+
+    
+
+#############################################################################
 
 def run_asyncio(settings) -> None:
 
     logger = logging.getLogger(__name__)
     # init scan manager
-    scan_manager = AsyncScanManager(settings=settings, logger=logger)
+    scan_manager = AsyncScanManager(settings=settings)
     # start scan manager
     try:
         loop = asyncio.get_event_loop()
@@ -101,7 +154,6 @@ if __name__ == '__main__':
     # an unsafe, unsupported, undocumented workaround :(
     os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 
-    batched = True
     if batched:
         logger.info("runnung batches")
         batches(settings=settings, logger=logger)

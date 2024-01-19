@@ -1,3 +1,5 @@
+from typing import Callable
+
 import numpy as np
 from scipy.ndimage import laplace
 from scipy.ndimage import gaussian_filter
@@ -9,7 +11,8 @@ def mean(x : np.ndarray) -> float:
 def laplace_filter(
         x: np.ndarray, 
         sigma: float = 10, 
-        norm: bool = True
+        norm: bool = True,
+        reduction: Callable = np.mean
     ) -> float:
     """ Laplacian filter
 
@@ -24,4 +27,7 @@ def laplace_filter(
     filt = gaussian_filter(x.astype(np.float64), sigma=sigma)
     if norm:
         filt /= np.mean(filt)
-    return np.mean(np.abs(laplace(filt)))
+    if reduction is not None:
+        return reduction(np.abs(laplace(filt)))
+    else:
+        return np.abs(laplace(filt))

@@ -2,18 +2,21 @@
 import os
 import sys
 import logging
-import argparse
-import datetime
+import asyncio
+import time
+from pathlib import Path
+import traceback
+
 import numpy as np
 import yaml
 
-from pathlib import Path
 from smartscan.utils import ColoredFormatter
+from smartscan import AsyncScanManager
 
-def main_asyncio(settings) -> None:
-    import asyncio
-    from smartscan import AsyncScanManager
 
+def run_asyncio(settings) -> None:
+
+    logger = logging.getLogger(__name__)
     # init scan manager
     scan_manager = AsyncScanManager(settings=settings, logger=logger)
     # start scan manager
@@ -21,12 +24,19 @@ def main_asyncio(settings) -> None:
         loop = asyncio.get_event_loop()
         loop.run_until_complete(scan_manager.start())
     except KeyboardInterrupt:
-        scan_manager.remote.END()
-        logger.error('Terminated scan from keyboard')
-    loop.close()
-    logger.info("Scan manager stopped.")
+        loop.run_forever()
+        loop.run_until_complete(scan_manager.stop())
+        logger.warning('Terminated scan from keyboard')
+    except Exception as e:
+        logger.critical(f'Scan manager stopped due to {type(e).__name__}: {e} {traceback.format_exc()}')
+        logger.exception(e)
+        loop.run_until_complete(scan_manager.stop())
 
-def main_gui(settings) -> None:
+    logger.info("Scan manager stopped.")
+    logger.info('Scan finished')
+
+
+def run_gui(settings) -> None:
     from smartscan.gui import SmartScanApp
     
     app = SmartScanApp(
@@ -40,31 +50,14 @@ def main_gui(settings) -> None:
         print('exiting')
     # sys.exit(app.exec_())
 
-if __name__ == "__main__":
 
-    parser = argparse.ArgumentParser(description="AsyncScanManager")
-    parser.add_argument("--host", type=str, default="localhost", help="SGM4 host")
-    parser.add_argument("--port", type=int, default=54333, help="SGM4 port")
-    parser.add_argument(
-        "--settings", type=str, default="scan_settings.yaml", help="Settings file"
-    )
-    parser.add_argument(
-        "--gui", default=False, action="store_true", help="Start as GUI"
-    )
-    # parser.add_argument('--loglevel',   type=str, default='DEBUG', help='Log level')
-    # parser.add_argument('--logdir',     type=str, default=None, help='Log directory')
-    # parser.add_argument('--duration',   type=int, default=None, help='Duration of the scan in seconds')
-    # parser.add_argument('--train_at',   type=int, default=None, help='Train GP at these number of samples')
-    # parser.add_argument('--train_every',type=int, default=None, help='Train GP every n samples')
-    parsed_args = parser.parse_args()
+if __name__ == '__main__':
 
-    # load settings from json file
-    settings_file = parsed_args.settings
+    settings_file = "scan_settings.yaml"
+
     with open(settings_file) as f:
         settings = yaml.load(f, Loader=yaml.FullLoader)
 
-    # init logger
-    # logger.setLevel("DEBUG")#settings["logging"]["level"])
     logging.root.setLevel(settings["logging"]["level"].upper())
     formatter = ColoredFormatter(settings["logging"]["formatter"])
 
@@ -75,33 +68,6 @@ if __name__ == "__main__":
 
     logger = logging.getLogger(__name__)
 
-    if settings["logging"]["directory"] is not None:
-        logdir = Path(settings["logging"]["directory"])
-        if not logdir.exists():
-            logdir.mkdir()
-        # highest number of existing logfiles
-        i = 0
-        for file in logdir.iterdir():
-            if file.suffix == ".txt":
-                i = max(i, int(file.stem.split("_")[2]))
-
-        # current datetime
-        now = datetime.now().strftime("%Y%m%d_%H%M%S")
-        logname = f"scan_log_{i}_{now}.txt"
-
-        fh = logging.FileHandler(logdir / logname)
-        fh.setLevel("DEBUG")
-        fh.setFormatter(formatter)
-        logger.addHandler(fh)
-
-    logger.info('Created logger at level %s' % logger.level)
-
-    logger.critical('Critical enabled')
-    logger.error('Error enabled')
-    logger.warning('Warning enabled')
-    logger.info('Info enabled')
-    logger.debug('Debug enabled')
-    
     # suppress user warnings
     import warnings
     warnings.simplefilter('ignore', UserWarning)
@@ -112,7 +78,20 @@ if __name__ == "__main__":
     # an unsafe, unsupported, undocumented workaround :(
     os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 
-    if parsed_args.gui:
-        main_gui(settings=settings_file)
-    else:
-        main_asyncio(settings=settings_file)
+    ### DEFINE BATCH RUNS ###
+    # ~~~ BATCH 1 ~~~
+    logger.info('Starting batch 1')
+    settings['scanning']['max_points'] = 3
+    settings['acquisition_function']['params']['a'] = 0.05
+
+    run_asyncio(settings)
+
+    logger.info('Waiting 30s before starting a new scan...')
+    time.sleep(2)
+
+    # ~~~ BATCH 2 ~~~
+
+    settings['acquisition_function']['params']['a'] = 0.1
+    settings['cost_function']['params']['weight'] = 0.01
+
+    run_asyncio(settings)

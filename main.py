@@ -13,6 +13,29 @@ import yaml
 from smartscan.utils import ColoredFormatter
 from smartscan import AsyncScanManager
 
+def batches(settings,logger) -> None:
+
+    # ~~~ BATCH 1 ~~~
+    logger.info('Starting batch run #1')
+    # settings['scanning']['max_points'] = 500
+    settings['acquisition_function']['params']['a'] = 0.05
+    settings['cost_function']['params']['weight'] = 0.01
+
+    run_asyncio(settings)
+
+    logger.info('Waiting 30s before starting a new scan...')
+    time.sleep(30)
+
+    # ~~~ BATCH 2 ~~~
+    logger.info('Starting batch run #2')
+    settings['acquisition_function']['params']['a'] = 0.1
+    settings['cost_function']['params']['weight'] = 0.01
+
+    run_asyncio(settings)
+
+    logger.info('Waiting 30s before starting a new scan...')
+    time.sleep(30)
+
 
 def run_asyncio(settings) -> None:
 
@@ -78,27 +101,13 @@ if __name__ == '__main__':
     # an unsafe, unsupported, undocumented workaround :(
     os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 
-    ### DEFINE BATCH RUNS ###
-
-    # ~~~ BATCH 1 ~~~
-    logger.info('Starting batch run #1')
-    settings['scanning']['max_points'] = 5
-    settings['acquisition_function']['params']['a'] = 0.05
-
-    run_asyncio(settings)
-
-    logger.info('Waiting 30s before starting a new scan...')
-    time.sleep(30)
-
-    # ~~~ BATCH 2 ~~~
-    logger.info('Starting batch run #2')
-    settings['acquisition_function']['params']['a'] = 0.1
-    settings['cost_function']['params']['weight'] = 0.01
-
-    run_asyncio(settings)
-
-    logger.info('Waiting 30s before starting a new scan...')
-    time.sleep(30)
+    batched = True
+    if batched:
+        logger.info("runnung batches")
+        batches(settings=settings, logger=logger)
+    else:
+        logger.info("runnung single scan")
+        run_asyncio(settings)
 
     asyncio.get_event_loop().stop()
     logger.info("Closed event loop")

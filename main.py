@@ -79,19 +79,26 @@ if __name__ == '__main__':
     os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 
     ### DEFINE BATCH RUNS ###
+
     # ~~~ BATCH 1 ~~~
-    logger.info('Starting batch 1')
-    settings['scanning']['max_points'] = 3
+    logger.info('Starting batch run #1')
+    settings['scanning']['max_points'] = 5
     settings['acquisition_function']['params']['a'] = 0.05
 
     run_asyncio(settings)
 
     logger.info('Waiting 30s before starting a new scan...')
-    time.sleep(2)
+    time.sleep(30)
 
     # ~~~ BATCH 2 ~~~
-
+    logger.info('Starting batch run #2')
     settings['acquisition_function']['params']['a'] = 0.1
     settings['cost_function']['params']['weight'] = 0.01
 
     run_asyncio(settings)
+
+    logger.info('Waiting 30s before starting a new scan...')
+    time.sleep(30)
+
+    asyncio.get_event_loop().stop()
+    logger.info("Closed event loop")

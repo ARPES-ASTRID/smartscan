@@ -49,7 +49,7 @@ tasks: # list of tasks to which to reduce the data
   laplace_filter:
     function: laplace_filter
     params:
-      sigma: 5
+      sigma: 2
       norm: False
   # signal_to_bg:
   #   function: signal_to_bg
@@ -70,7 +70,7 @@ cost_function:
     dwell_time: 2 # seconds
     dead_time: 0.1 # seconds
     min_distance: 4.99 # This should always be just below the step size of the scanner
-    weight: 1 # weight of the cost function
+    weight: 0.01 # weight of the cost function
 
 gp:
   optimizer:

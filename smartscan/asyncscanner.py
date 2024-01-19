@@ -706,12 +706,10 @@ class AsyncScanManager:
 
     def __del__(self) -> None:
         self.logger.critical("Deleted instance. scan stopping")
-        self.finalize()
         try:
-            self.remote.END()
+            self.finalize()
         except Exception as e:
-            self.logger.error(f"Deleted Instance: No scan to stop | {type(e)} stopping scan: {e}")
-
+            self.logger.warn(f"{type(e).__name__} while deleting asyncscanner instance: {e}")
 
 
 if __name__ == "__main__":

@@ -411,13 +411,15 @@ class AsyncScanManager:
         self.tell_gp(update_normalization=True)
         t = time.time()
         hps_new = self.gp.train_gp(hyperparameter_bounds=hps_bounds, **train_pars)
+        if not all(hps_new == self.gp.hyperparameters):
+            self.logger.warning('Something wrong with training, hyperparameters not updated?')
         self.logger.info(f"Training complete in {pretty_print_time(time.time()-t)} s")
-        self.logger.debug("Hyperparameters: ")
+        self.logger.info("Hyperparameters: ")
         for old, new, bounds in zip(hps_old, hps_new, hps_bounds):
             change = (new - old) / old
-            self.logger.debug(f"\t{old:.2f} -> {new:.2f} ({change:.2%}) | {bounds}")
-        self.hyperparameter_history[f"training {self.iter_counter}"] = {
-            "hyperparameters": [float(f) for f in hps_new],
+            self.logger.info(f"\t{old:.2f} -> {new:.2f} ({change:.2%}) | {bounds}")
+        self.hyperparameter_history[f"training{self.iter_counter:04.0f}"] = {
+            "hyperparameters": [float(f) for f in self.gp.hyperparameters],
             "time": time.time() - t,
             "iteration": self.iter_counter,
             "samples": len(self.positions),

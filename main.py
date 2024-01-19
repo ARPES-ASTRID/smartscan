@@ -41,7 +41,7 @@ def run_asyncio(settings) -> None:
 
     logger = logging.getLogger(__name__)
     # init scan manager
-    scan_manager = AsyncScanManager(settings=settings, logger=logger)
+    scan_manager = AsyncScanManager(settings=settings)
     # start scan manager
     try:
         loop = asyncio.get_event_loop()

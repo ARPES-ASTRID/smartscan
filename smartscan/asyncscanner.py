@@ -575,11 +575,10 @@ class AsyncScanManager:
         except KeyboardInterrupt:
             self.logger.warning("KeyboardInterrupt. Stopping all loops.")
             for t in tasks:
-                if t.done():
-                    self.logger.debug(f"Task {t} is done, no need to cancel")
-                else:
-                    self.logger.debug(f"Canceling task {t}")
+                try:
                     t.cancel()
+                except:
+                    pass
         except Exception as e:
             self.logger.error(f"{type(e)} stopping all loops: {e}")
         finally:

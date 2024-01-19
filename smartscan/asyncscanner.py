@@ -62,7 +62,6 @@ class AsyncScanManager:
     def __init__(
         self,
         settings: str | Path | dict = None,
-        logger: logging.Logger = None,
     ) -> None:
         """
         Initialize the AsyncScanManager object.
@@ -126,16 +125,6 @@ class AsyncScanManager:
             [0.5, 0],
         ]
 
-    def setup_logger(self) -> logging.Logger:
-        """Setup the logger."""
-        logger = logging.getLogger(__name__)
-        logging_filename = self.filename.with_suffix(".log")
-        fh = logging.FileHandler(logging_filename)
-        fh.setLevel("DEBUG")
-        fh.setFormatter(self.settings['logging']['formatter'])
-        logger.addHandler(fh)
-        logger.info(f"Logging to file: {logging_filename}.")
-
     @property
     def val_array(self) -> NDArray[Any]:
         """Get the values as an array."""
@@ -160,41 +149,6 @@ class AsyncScanManager:
             self.logger.debug(f"Updated Task weights: {self.task_weights}")
         return self.task_weights
 
-    def init_scan(self) -> None:
-        """Initialize the scan."""
-        self.logger.info(f"Initializing scan. with {len(self.relative_inital_points)} points.")
-        # TODO: add this to settings and give more options
-        self.remote.START()
-        while True:
-            try:
-                s = self.remote.STATUS()
-                break
-            except Exception as e:
-                self.logger.error(f"Error setting up scan: {e}")
-                self.logger.info("Trying again in 1 second...")
-                time.sleep(1)
-        self.logger.info(f"Scan initialized. Status: {s}")
-        if status := self.remote.STATUS() != "READY":
-            raise RuntimeError(f"Scan not ready. Status: {status}")
-        self.connect()
-        self.save_settings()
-
-        for p in self.relative_inital_points:
-            x = p[0] * self.remote.limits[0][1] + (1 - p[0]) * self.remote.limits[0][0]
-            y = p[1] * self.remote.limits[1][1] + (1 - p[1]) * self.remote.limits[1][0]
-            self.remote.ADD_POINT(x, y)
-            self.last_asked_position = (x,y)
-            self.logger.debug(f"Added point {p} to scan.")
-
-    def connect(self) -> None:
-        self.remote.connect()
-        if len(self.remote.axes[0]) == 0:
-            raise ValueError("failed initializing axes!!")
-        else:
-            self.logger.info(
-                f"Axes: {[a.shape for a in self.remote.axes]} | Limits: {self.remote.limits} | Step size: {self.remote.step_size} "
-            )
-    
     @property
     def filename(self) -> Path:
         """Get the file stem."""
@@ -205,35 +159,7 @@ class AsyncScanManager:
                 raise FileNotFoundError(f"Folder {folder} does not exist.")
         self.logger.debug(f"Saving settings to {folder}.")
         return filename
-    
-    def save_settings(
-        self,
-    ) -> Path:
-        """Save the settings in the data directory next to the acquired data.
 
-        Args:
-            filename (Path | str, optional): _description_. Defaults to "settings.json".
-            folder (Path | str, optional): _description_. Defaults to "./".
-
-        Raises:
-            NotImplementedError: _description_
-
-        Returns:
-            Path: _description_
-        """
-        target = self.filename.parent / (self.filename.stem + "_settings.yaml")
-        # i = 0
-        if not target.exists():
-            if self.settings_file is None:
-                with open(target, "w") as f:
-                    yaml.dump(self.settings, f)
-                self.logger.info(f"Settings saved to {target}")
-            else:
-                shutil.copy(self.settings_file, target)
-                self.logger.info(f"Settings copied to {target}")
-        else:
-            self.logger.critical(f"FAILED TO SAVE SETTINGS TO {target}. File exists!!")
-    
     # get data from SGM4
     async def fetch_data(
         self,
@@ -463,6 +389,10 @@ class AsyncScanManager:
                 return True
         return False
 
+    def was_already_measured(self, pos:np.ndarray) -> bool:
+        """ check if the given position is in the positions list."""
+        return np.any(np.all(np.isclose(self.pos_array, pos), axis=1))
+
     def train_gp(self) -> None:
         """Train the GP."""
         hps_old = self.gp.hyperparameters.copy()
@@ -490,7 +420,41 @@ class AsyncScanManager:
             "samples": len(self.positions),
         }
         self.save_hyperparameters()
-    
+        
+    def ask_gp(self) -> None:
+        """Ask the GP for the next position."""
+        acq_func_callable = getattr(
+            aquisition_functions,
+            self.settings["acquisition_function"]["function"],
+        )
+        acq_func_params = self.settings["acquisition_function"]["params"]
+        aqf = partial(acq_func_callable, **acq_func_params)
+
+        ask_pars = self.settings["gp"]["ask"]
+
+        if self.gp.cost_function_parameters is not None:
+            self.gp.cost_function_parameters.update({'prev_points': self.gp.x_data})
+        if self.last_asked_position is None:
+            self.last_asked_position = self.positions[-1]
+        self.logger.debug(f"ASK: Last asked position: {self.last_asked_position}")
+        next_pos = self.gp.ask(
+            position=np.array(self.last_asked_position),
+            acquisition_function=aqf,
+            **ask_pars
+        )["x"]
+        for point in next_pos:
+            rounded_point = closest_point_on_grid(point, axes=self.remote.axes)
+            self.logger.info(
+                f"ASK GP          | Adding {rounded_point} to scan. rounded from {point}"
+            )
+            if any([all(rounded_point == prev) for prev in self.pos_array]):
+                self.logger.warning(
+                f"ASK GP          | Point {rounded_point} already evaluated!"
+                )
+            self.remote.ADD_POINT(*rounded_point)
+            self.last_asked_position = rounded_point
+        return True
+
     async def gp_loop(self) -> None:
         """GP loop.
 
@@ -538,43 +502,6 @@ class AsyncScanManager:
 
         self.remote.END()
 
-    def ask_gp(self) -> None:
-        """Ask the GP for the next position."""
-        acq_func_callable = getattr(
-            aquisition_functions,
-            self.settings["acquisition_function"]["function"],
-        )
-        acq_func_params = self.settings["acquisition_function"]["params"]
-        aqf = partial(acq_func_callable, **acq_func_params)
-
-        ask_pars = self.settings["gp"]["ask"]
-
-        if self.gp.cost_function_parameters is not None:
-            self.gp.cost_function_parameters.update({'prev_points': self.gp.x_data})
-        if self.last_asked_position is None:
-            self.last_asked_position = self.positions[-1]
-        self.logger.debug(f"ASK: Last asked position: {self.last_asked_position}")
-        next_pos = self.gp.ask(
-            position=np.array(self.last_asked_position),
-            acquisition_function=aqf,
-            **ask_pars
-        )["x"]
-        for point in next_pos:
-            rounded_point = closest_point_on_grid(point, axes=self.remote.axes)
-            self.logger.info(
-                f"ASK GP          | Adding {rounded_point} to scan. rounded from {point}"
-            )
-            if any([all(rounded_point == prev) for prev in self.pos_array]):
-                self.logger.warning(
-                f"ASK GP          | Point {rounded_point} already evaluated!"
-                )
-            self.remote.ADD_POINT(*rounded_point)
-            self.last_asked_position = rounded_point
-        return True
-
-    def in_positions(self, pos:np.ndarray) -> bool:
-        """ check if the given position is in the positions list."""
-        return np.any(np.all(np.isclose(self.pos_array, pos), axis=1))
     # plotting loop
     async def plotting_loop(self) -> None:
         """Plotting loop.
@@ -605,6 +532,24 @@ class AsyncScanManager:
                 await asyncio.sleep(0.2)
             # if fig is not None and self.iter_counter % self.settings['plot']['save_every'] == 0:
             #     fig.savefig(f'../results/{self.remote.filename.with_suffix("pdf").name}')
+
+    async def killer_loop(self, duration=None) -> None:
+        self.logger.info(
+            f"Starting killer loop. Will kill process after {duration} seconds."
+        )
+        if duration is None:
+            duration = self.settings["scanning"]["duration"]
+        if duration is not None:
+            time_left = duration
+            while not self._should_stop:
+                time_left -= 1
+                if time_left <= 0:
+                    break
+                await asyncio.sleep(1)
+            self.logger.info(
+                f"Killer loop strikes! Scan interrupted after {duration} seconds."
+            )
+            self.stop()
 
     # all loops and initialization
     async def all_loops(self) -> None:
@@ -646,38 +591,54 @@ class AsyncScanManager:
         
         await self.all_loops()
 
+    def connect(self) -> None:
+        self.remote.connect()
+        if len(self.remote.axes[0]) == 0:
+            raise ValueError("failed initializing axes!!")
+        else:
+            self.logger.info(
+                f"Axes: {[a.shape for a in self.remote.axes]} | Limits: {self.remote.limits} | Step size: {self.remote.step_size} "
+            )
+    
+    def init_scan(self) -> None:
+        """Initialize the scan."""
+        self.logger.info(f"Initializing scan. with {len(self.relative_inital_points)} points.")
+        # TODO: add this to settings and give more options
+        self.remote.START()
+        while True:
+            try:
+                s = self.remote.STATUS()
+                break
+            except Exception as e:
+                self.logger.error(f"Error setting up scan: {e}")
+                self.logger.info("Trying again in 1 second...")
+                time.sleep(1)
+        self.logger.info(f"Scan initialized. Status: {s}")
+        if status := self.remote.STATUS() != "READY":
+            raise RuntimeError(f"Scan not ready. Status: {status}")
+        self.connect()
+        self.save_settings()
+
+        for p in self.relative_inital_points:
+            x = p[0] * self.remote.limits[0][1] + (1 - p[0]) * self.remote.limits[0][0]
+            y = p[1] * self.remote.limits[1][1] + (1 - p[1]) * self.remote.limits[1][0]
+            self.remote.ADD_POINT(x, y)
+            self.last_asked_position = (x,y)
+            self.logger.debug(f"Added point {p} to scan.")
+
+    def stop(self) -> None:
+        self.logger.info("Stopping all loops.")
+        self.kill()
+
     async def interrupt(self) -> None:
         """Interrupt the scan."""
         self.logger.info("Interrupting scan.")
         self.kill()
         await asyncio.sleep(1)
 
-    # stop and kill
-    def stop(self) -> None:
-        self.logger.info("Stopping all loops.")
-        self.kill()
-
     def kill(self) -> None:
         self.logger.info("Killing all loops.")
         self._should_stop = True
-
-    async def killer_loop(self, duration=None) -> None:
-        self.logger.info(
-            f"Starting killer loop. Will kill process after {duration} seconds."
-        )
-        if duration is None:
-            duration = self.settings["scanning"]["duration"]
-        if duration is not None:
-            time_left = duration
-            while not self._should_stop:
-                time_left -= 1
-                if time_left <= 0:
-                    break
-                await asyncio.sleep(1)
-            self.logger.info(
-                f"Killer loop strikes! Scan interrupted after {duration} seconds."
-            )
-            self.stop()
 
     def finalize(self) -> None:
         self.logger.info("Finalizing scan.")
@@ -703,7 +664,44 @@ class AsyncScanManager:
             self.logger.info(f"Saved hyperparameters to {target}")
         except Exception as e:
             self.logger.error(f"{type(e)} saving hyperparameters: {e}")
+    
+    def save_settings(
+        self,
+    ) -> Path:
+        """Save the settings in the data directory next to the acquired data.
 
+        Args:
+            filename (Path | str, optional): _description_. Defaults to "settings.json".
+            folder (Path | str, optional): _description_. Defaults to "./".
+
+        Raises:
+            NotImplementedError: _description_
+
+        Returns:
+            Path: _description_
+        """
+        target = self.filename.parent / (self.filename.stem + "_settings.yaml")
+        # i = 0
+        if not target.exists():
+            if self.settings_file is None:
+                with open(target, "w") as f:
+                    yaml.dump(self.settings, f)
+                self.logger.info(f"Settings saved to {target}")
+            else:
+                shutil.copy(self.settings_file, target)
+                self.logger.info(f"Settings copied to {target}")
+        else:
+            self.logger.critical(f"FAILED TO SAVE SETTINGS TO {target}. File exists!!")
+    
+    def save_log_to_file(self) -> logging.Logger:
+        """Setup the logger."""
+        logging_filename = self.filename.with_suffix(".log")
+        fh = logging.FileHandler(logging_filename)
+        fh.setLevel("DEBUG")
+        fh.setFormatter(self.settings['logging']['formatter'])
+        self.logger.addHandler(fh)
+        self.logger.info(f"Logging to file: {logging_filename}.")
+    
     def __del__(self) -> None:
         self.logger.critical("Deleted instance. scan stopping")
         try:

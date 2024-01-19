@@ -5,6 +5,7 @@ import logging
 import asyncio
 import time
 from pathlib import Path
+import traceback
 
 import numpy as np
 import yaml
@@ -23,9 +24,14 @@ def run_asyncio(settings) -> None:
         loop = asyncio.get_event_loop()
         loop.run_until_complete(scan_manager.start())
     except KeyboardInterrupt:
-        scan_manager.remote.END()
-        logger.error('Terminated scan from keyboard')
-    # loop.close()
+        loop.run_forever()
+        loop.run_until_complete(scan_manager.stop())
+        logger.warning('Terminated scan from keyboard')
+    except Exception as e:
+        logger.critical(f'Scan manager stopped due to {type(e).__name__}: {e} {traceback.format_exc()}')
+        logger.exception(e)
+        loop.run_until_complete(scan_manager.stop())
+
     logger.info("Scan manager stopped.")
     logger.info('Scan finished')
 
@@ -89,4 +95,3 @@ if __name__ == '__main__':
     settings['cost_function']['params']['weight'] = 0.01
 
     run_asyncio(settings)
-

@@ -455,10 +455,16 @@ class AsyncScanManager:
                 cost_function_parameters=cost_func_params,
             )
 
+    def should_train(self) -> bool:
+        if self.iter_counter in self.settings["scanning"]["train_at"]:
+            return True
+        if self.settings["scanning"]["train_every"] > 0:
+            if self.iter_counter % self.settings["scanning"]["train_every"] == 0:
+                return True
+        return False
+
     def train_gp(self) -> None:
         """Train the GP."""
-
-
         hps_old = self.gp.hyperparameters.copy()
         train_pars = self.settings["gp"]["training"].copy()
         hps_bounds = np.asarray(train_pars.pop("hyperparameter_bounds"))
@@ -483,6 +489,8 @@ class AsyncScanManager:
             "iteration": self.iter_counter,
             "samples": len(self.positions),
         }
+        self.save_hyperparameters()
+    
     async def gp_loop(self) -> None:
         """GP loop.
 
@@ -501,12 +509,13 @@ class AsyncScanManager:
         self.logger.info("Data ready for GP. Starting GP loop.")
         while not self._should_stop:
             self.logger.debug("GP looping...")
-            if self.iter_counter > self.settings["scanning"]["max_points"]:
+            if self.iter_counter >= self.settings["scanning"]["max_points"]:
                 self.logger.warning(
                     f"Max number of iterations of {self.settings['scanning']['max_points']}"
                     " reached. Ending scan."
                 )
                 self._should_stop = True
+                break
             has_new_data = self.update_data_and_positions()
             if has_new_data:
                 self.iter_counter += 1
@@ -517,19 +526,8 @@ class AsyncScanManager:
                     self.init_gp()  # initialize GP at first iteration
                 else:
                     self.tell_gp()
-                    retrain = False
-                    if self.iter_counter in self.settings["scanning"]["train_at"]:
-                        retrain = True
-                    elif (
-                        self.settings["scanning"]["train_every"] > 0
-                        and self.iter_counter % self.settings["scanning"]["train_every"]
-                        == 0
-                    ):
-                        retrain = True
-                    # f len(self.positions) in self.train_at:
-                    if retrain:
+                    if self.should_train():
                         self.train_gp()
-
                     success = self.ask_gp()
                     if not success:
                         break
@@ -614,17 +612,30 @@ class AsyncScanManager:
         Start all the loops.
         """
         self.logger.info("Starting all loops.")
-        await asyncio.gather(
-            # self.training_loop(),
-            self.killer_loop(),
-            self.fetch_data_loop(),
-            self.reduction_loop(),
-            self.gp_loop(),
-            self.plotting_loop(),
-        )
-        self.logger.info("All loops finished.")
-        self.remote.END()
-        self.finalize()
+        tasks = (
+                self.killer_loop(),
+                self.fetch_data_loop(),
+                self.reduction_loop(),
+                self.gp_loop(),
+                self.plotting_loop(),
+            )
+        try:
+            await asyncio.gather(*tasks)
+                # self.training_loop(),
+        except KeyboardInterrupt:
+            self.logger.warning("KeyboardInterrupt. Stopping all loops.")
+            for t in tasks:
+                if t.done():
+                    self.logger.debug(f"Task {t} is done, no need to cancel")
+                else:
+                    self.logger.debug(f"Canceling task {t}")
+                    t.cancel()
+        except Exception as e:
+            self.logger.error(f"{type(e)} stopping all loops: {e}")
+        finally:
+            self.logger.info("Finalizing loop gathering: All loops finished.")
+
+            self.stop()
 
     async def start(self) -> None:
         """Initialize scan and start all loops."""
@@ -634,6 +645,12 @@ class AsyncScanManager:
         self._should_stop = False
         
         await self.all_loops()
+
+    async def interrupt(self) -> None:
+        """Interrupt the scan."""
+        self.logger.info("Interrupting scan.")
+        self.kill()
+        await asyncio.sleep(1)
 
     # stop and kill
     def stop(self) -> None:

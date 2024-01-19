@@ -1,7 +1,5 @@
-from fileinput import filename
-from re import T
-from typing import Callable, Sequence, Tuple, Union, List, Any
-from numpy.typing import NDArray, ArrayLike
+from typing import List, Any
+from numpy.typing import NDArray
 from pathlib import Path
 import logging
 from functools import partial
@@ -78,14 +76,13 @@ class AsyncScanManager:
             self.settings_file = settings
             with open(settings) as f:
                 self.settings = yaml.load(f, Loader=yaml.FullLoader)
+        elif isinstance(settings, dict):
+            self.settings = settings.copy()
+            self.settings_file = None
         else:
-            raise ValueError("Settings must be a path to a yaml file.")
-
-        # set logger
-        if logger is not None:
-            self.logger: logging.Logger = logger
-        else:
-            self.logger =  logging.Logger()
+            raise ValueError("Settings must be a path to a yaml file or a dict.")
+        
+        self.logger =  logging.getLogger("AsyncScanManager")
         self.logger.info("Initialized AsyncScanManager.")
 
         self.task_labels: List[str] = list(self.settings["tasks"].keys())
@@ -128,6 +125,16 @@ class AsyncScanManager:
             [1, 0],
             [0.5, 0],
         ]
+
+    def setup_logger(self) -> logging.Logger:
+        """Setup the logger."""
+        logger = logging.getLogger(__name__)
+        logging_filename = self.filename.with_suffix(".log")
+        fh = logging.FileHandler(logging_filename)
+        fh.setLevel("DEBUG")
+        fh.setFormatter(self.settings['logging']['formatter'])
+        logger.addHandler(fh)
+        logger.info(f"Logging to file: {logging_filename}.")
 
     @property
     def val_array(self) -> NDArray[Any]:
@@ -214,16 +221,16 @@ class AsyncScanManager:
         Returns:
             Path: _description_
         """
-        
-        target = self.filename.with_suffix(".yaml")
+        target = self.filename.parent / (self.filename.stem + "_settings.yaml")
         # i = 0
         if not target.exists():
-        # while target.exists():
-            # i += 1
-            # target = folder / filename.append("_{i:03.0f}").with_suffix(".yaml")
-            # raise NotImplementedError("multiple runs for the same measurement run is not working yet...")
-            shutil.copy(self.settings_file, target)
-            self.logger.info(f"Settings saved to {target}")
+            if self.settings_file is None:
+                with open(target, "w") as f:
+                    yaml.dump(self.settings, f)
+                self.logger.info(f"Settings saved to {target}")
+            else:
+                shutil.copy(self.settings_file, target)
+                self.logger.info(f"Settings copied to {target}")
         else:
             self.logger.critical(f"FAILED TO SAVE SETTINGS TO {target}. File exists!!")
     
@@ -455,6 +462,8 @@ class AsyncScanManager:
         hps_old = self.gp.hyperparameters.copy()
         train_pars = self.settings["gp"]["training"].copy()
         hps_bounds = np.asarray(train_pars.pop("hyperparameter_bounds"))
+        if "bounds" not in self.hyperparameter_history.keys():
+            self.hyperparameter_history["bounds"] = hps_bounds.tolist() 
         self.logger.info("Training GP:")
         self.logger.info(f"\titeration {self.iter_counter} | {len(self.positions)} samples")
         self.logger.debug(f"\thyperparameter_bounds: {hps_bounds}")
@@ -468,8 +477,12 @@ class AsyncScanManager:
         for old, new, bounds in zip(hps_old, hps_new, hps_bounds):
             change = (new - old) / old
             self.logger.debug(f"\t{old:.2f} -> {new:.2f} ({change:.2%}) | {bounds}")
-        self.hyperparameter_history[self.iter_counter] = hps_new
-
+        self.hyperparameter_history[f"training {self.iter_counter}"] = {
+            "hyperparameters": [float(f) for f in hps_new],
+            "time": time.time() - t,
+            "iteration": self.iter_counter,
+            "samples": len(self.positions),
+        }
     async def gp_loop(self) -> None:
         """GP loop.
 
@@ -485,8 +498,6 @@ class AsyncScanManager:
             else:
                 self.logger.debug(f"Waiting for data to be ready for GP. {len(self.positions)}/{len(self.relative_inital_points)} ")
                 await asyncio.sleep(0.2)
-            
-
         self.logger.info("Data ready for GP. Starting GP loop.")
         while not self._should_stop:
             self.logger.debug("GP looping...")
@@ -500,7 +511,7 @@ class AsyncScanManager:
             if has_new_data:
                 self.iter_counter += 1
                 self.logger.info(
-                    f"GP iter     {self.iter_counter:3.0f} | {len(self.positions)} samples"
+                    f"GP iter: {self.iter_counter:3.0f}/{self.settings['scanning']['max_points']:4.0f} | {len(self.positions)} samples"
                 )
                 if self.gp is None:
                     self.init_gp()  # initialize GP at first iteration
@@ -613,6 +624,7 @@ class AsyncScanManager:
         )
         self.logger.info("All loops finished.")
         self.remote.END()
+        self.finalize()
 
     async def start(self) -> None:
         """Initialize scan and start all loops."""
@@ -639,22 +651,49 @@ class AsyncScanManager:
         if duration is None:
             duration = self.settings["scanning"]["duration"]
         if duration is not None:
-            await asyncio.sleep(duration)
+            time_left = duration
+            while not self._should_stop:
+                time_left -= 1
+                if time_left <= 0:
+                    break
+                await asyncio.sleep(1)
             self.logger.info(
                 f"Killer loop strikes! Scan interrupted after {duration} seconds."
             )
             self.stop()
 
-    def __del__(self):
-        self.logger.critical("Deleted instance. scan stopping")
+    def finalize(self) -> None:
+        self.logger.info("Finalizing scan.")
+        self.logger.info("Saving figure...")
+        self.save_figure()
+        self.logger.info("Saving hyperparameters...")
+        self.save_hyperparameters()
+        self.logger.info("Scan finalized.")
+
+    def save_figure(self) -> None:
         try:
             self.fig.savefig(self.filename.with_suffix(".pdf"))
+            self.logger.info(f"Saved figure to {self.filename.with_suffix('.pdf')}")
+            plt.close(self.fig)
         except Exception as e:
             self.logger.error(f"{type(e)} saving figure: {e}")
+        
+    def save_hyperparameters(self) -> None:
+        try:
+            target = self.filename.parent / (self.filename.stem + "_hps.yaml")
+            with open(target, "w") as f:
+                yaml.dump(self.hyperparameter_history, f)
+            self.logger.info(f"Saved hyperparameters to {target}")
+        except Exception as e:
+            self.logger.error(f"{type(e)} saving hyperparameters: {e}")
+
+    def __del__(self) -> None:
+        self.logger.critical("Deleted instance. scan stopping")
+        self.finalize()
         try:
             self.remote.END()
-        except:
-            self.logger.error("Deleted instance, but there was no scan to stop")
+        except Exception as e:
+            self.logger.error(f"Deleted Instance: No scan to stop | {type(e)} stopping scan: {e}")
 
 
 

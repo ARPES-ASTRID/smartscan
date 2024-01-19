@@ -19,23 +19,17 @@ batched = False
 
 def batches(settings,logger) -> None:
 
-    # a_vals = [0.01,1]
-    iter_values = ['init','always', 'never']
+    iter_values =  ['init','always', 'never']
 
-    # wc = 0.01
     for i,val in enumerate(iter_values):
         logger.info(f'Starting batch run #{i}')
         # ~~~batch~~~~
-        # settings['scanning']['max_points'] = 500
-        # settings['acquisition_function']['params']['a'] = 0.1
-        # settings['acquisition_function']['params']['weights'] = [1,val]
-        # settings['cost_function']['params']['weight'] = 0.01
         settings['scanning']['normalize_values'] = val
-
         run_asyncio(settings)
         # ~~~~~~~~~~
         logger.info('Waiting 30s before starting a new scan...')
         time.sleep(30)
+    settings['scanning']['normalize_values'] = "training"
 
     # training batch
     settings['training']['pop_size'] = 40

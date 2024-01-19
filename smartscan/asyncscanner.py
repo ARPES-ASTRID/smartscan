@@ -193,11 +193,14 @@ class AsyncScanManager:
                 self.logger.debug(f"No data received: {message}")
                 return message, None
             case "MEASURE":
-                n_pos = int(vals[0])
-                pos: NDArray[Any] = np.asarray(vals[1 : n_pos + 1], dtype=float)
-                data: NDArray[Any] = np.asarray(vals[n_pos + 1 :], dtype=float)
-                data = data.reshape(self.remote.spectrum_shape)
-                return pos, data
+                try:
+                    n_pos = int(vals[0])
+                    pos: NDArray[Any] = np.asarray(vals[1 : n_pos + 1], dtype=float)
+                    data: NDArray[Any] = np.asarray(vals[n_pos + 1 :], dtype=float)
+                    data = data.reshape(self.remote.spectrum_shape)
+                    return pos, data
+                except ValueError as e:
+                    self.logger.critical(f'Failed interpreting received data with shape {data.shape} ')
             case _:
                 self.logger.warning(f"Unknown message code: {msg_code}")
                 return message, None

@@ -20,21 +20,79 @@ batched = False
 def batches(settings,logger) -> None:
 
     # a_vals = [0.01,1]
-    iter_values = [0.2,0.5,1,2,5]
+    iter_values = ['init','always', 'never']
 
     # wc = 0.01
     for i,val in enumerate(iter_values):
         logger.info(f'Starting batch run #{i}')
         # ~~~batch~~~~
-        settings['scanning']['max_points'] = 500
+        # settings['scanning']['max_points'] = 500
         # settings['acquisition_function']['params']['a'] = 0.1
-        settings['acquisition_function']['params']['weights'] = [1,val]
+        # settings['acquisition_function']['params']['weights'] = [1,val]
         # settings['cost_function']['params']['weight'] = 0.01
+        settings['scanning']['normalize_values'] = val
 
         run_asyncio(settings)
         # ~~~~~~~~~~
         logger.info('Waiting 30s before starting a new scan...')
         time.sleep(30)
+
+    # training batch
+    settings['training']['pop_size'] = 40
+    settings['training']['max_iter'] = 2
+    settings['training']['tolerance'] = 1e-6
+    run_asyncio(settings)
+    # ~~~~~~~~~~
+    logger.info('Waiting 30s before starting a new scan...')
+    time.sleep(30)
+
+
+    settings['training']['pop_size'] = 20
+    settings['training']['max_iter'] = 10
+    settings['training']['tolerance'] = 1e-6
+    run_asyncio(settings)
+    # ~~~~~~~~~~
+    logger.info('Waiting 30s before starting a new scan...')
+    time.sleep(30)
+
+    settings['training']['pop_size'] = 20
+    settings['training']['max_iter'] = 4
+    settings['training']['tolerance'] = 1e-8
+    run_asyncio(settings)
+    # ~~~~~~~~~~
+    logger.info('Waiting 30s before starting a new scan...')
+    time.sleep(30)
+
+    settings['training']['pop_size'] = 20
+    settings['training']['max_iter'] = 4
+    settings['training']['tolerance'] = 1e-8
+    run_asyncio(settings)
+    # ~~~~~~~~~~
+    logger.info('Waiting 30s before starting a new scan...')
+    time.sleep(30)
+
+    settings['training']['pop_size'] = 40
+    settings['training']['max_iter'] = 10
+    settings['training']['tolerance'] = 1e-8
+    run_asyncio(settings)
+    # ~~~~~~~~~~
+    logger.info('Waiting 30s before starting a new scan...')
+    time.sleep(30)
+
+    # covariance runs
+
+    settings['training']['pop_size'] = 20
+    settings['training']['max_iter'] = 2
+    settings['training']['tolerance'] = 1e-6
+    vals = [0.01,0.1,1,10]
+    for v in vals:
+        settings['acquisition_function']['params']['c'] = v
+        run_asyncio(settings)
+        # ~~~~~~~~~~
+        logger.info('Waiting 30s before starting a new scan...')
+        time.sleep(30)
+
+    
 
 #############################################################################
 

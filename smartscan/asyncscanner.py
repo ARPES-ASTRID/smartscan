@@ -236,18 +236,19 @@ class AsyncScanManager:
         """
         t0 = time.time()
         pp = data.copy()
-        for _, d in self.settings["preprocessing"].items():
-            func = getattr(preprocessing, d["function"])
-            kwargs = d.get("params", {})
-            if kwargs is None:
-                pp = func(pp)
-            else:
-                pp = func(pp, **kwargs)
-        self.last_spectrum = pp
+        if self.settings["preprocessing"] is not None:
+            for _, d in self.settings["preprocessing"].items():
+                func = getattr(preprocessing, d["function"])
+                kwargs = d.get("params", {})
+                if kwargs is None:
+                    pp = func(pp)
+                else:
+                    pp = func(pp, **kwargs)
+            self.last_spectrum = pp
+            self.logger.debug(
+                f"Preprocessing {pos} | shape {pp.shape} | mean : {pp.mean():.3f} ± {pp.std():.3f} | time: {t1-t0:.3f} s"
+            )
         t1 = time.time()
-        self.logger.debug(
-            f"Preprocessing {pos} | shape {pp.shape} | mean : {pp.mean():.3f} ± {pp.std():.3f} | time: {t1-t0:.3f} s"
-        )
 
         # reduce data
         reduced = []

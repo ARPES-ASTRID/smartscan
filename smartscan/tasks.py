@@ -1,8 +1,10 @@
 from typing import Callable, Sequence
 
 import numpy as np
-from scipy.ndimage import laplace
+from scipy.ndimage import laplace, sobel
 from scipy.ndimage import gaussian_filter
+from scipy.stats import entropy
+
 
 def mean(
         x : np.ndarray, 
@@ -14,6 +16,7 @@ def mean(
         x = x[roi[0,0]:roi[0,1], roi[1,0]:roi[1,1]]
     return np.mean(x)
 
+
 def std(
         x : np.ndarray, 
         roi:Sequence[Sequence[int]] = None
@@ -23,6 +26,7 @@ def std(
         roi = np.array(roi)
         x = x[roi[0,0]:roi[0,1], roi[1,0]:roi[1,1]]
     return np.std(x)
+
 
 def laplace_filter(
         x: np.ndarray, 
@@ -52,6 +56,7 @@ def laplace_filter(
     else:
         return np.abs(laplace(filt))
     
+
 def contrast_noise_ratio(
         x:np.ndarray, 
         signal_roi: Sequence[Sequence[int]],
@@ -79,3 +84,42 @@ def contrast_noise_ratio(
     sigma_noise = np.std(background)
     # Calculate CNR
     return np.abs(mu_signal - mu_background) / sigma_noise
+
+
+def edge_density(
+        x: np.ndarray,
+        roi: Sequence[Sequence[int]] = None,
+    ) -> float:
+    """ Calculates the edge density of an image
+
+    Args:
+        x (np.ndarray): input array
+      
+    Returns:
+        float: edge density
+    """
+    if roi is not None:
+        roi = np.array(roi)
+        x = x[roi[0,0]:roi[0,1], roi[1,0]:roi[1,1]]
+    edges = sobel(x)
+    return np.sum(edges) / edges.size
+
+
+def image_entropy(
+        x: np.ndarray, 
+        roi: Sequence[Sequence[int]] = None,
+    ) -> float:
+    """ Calculates the (negative) entropy of an image
+
+    Args:
+        x (np.ndarray): input array
+      
+    Returns:
+        float: negative entropy
+    """
+    if roi is not None:
+        roi = np.array(roi)
+        x = x[roi[0,0]:roi[0,1], roi[1,0]:roi[1,1]]
+    hist, _ = np.histogram(x, bins=256, range=(0, 256))
+    hist = hist / hist.sum()
+    return entropy(hist)

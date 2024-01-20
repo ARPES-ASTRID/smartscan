@@ -6,6 +6,7 @@ import asyncio
 import time
 from pathlib import Path
 import traceback
+from copy import deepcopy
 
 import numpy as np
 import yaml
@@ -20,79 +21,58 @@ batched = False
 def batches(settings,logger) -> None:
 
     # a_vals = [0.01,1]
-    iter_values = ['init','always', 'never']
-
-    # wc = 0.01
-    for i,val in enumerate(iter_values):
-        logger.info(f'Starting batch run #{i}')
-        # ~~~batch~~~~
-        # settings['scanning']['max_points'] = 500
-        # settings['acquisition_function']['params']['a'] = 0.1
-        # settings['acquisition_function']['params']['weights'] = [1,val]
-        # settings['cost_function']['params']['weight'] = 0.01
-        settings['scanning']['normalize_values'] = val
-
-        run_asyncio(settings)
-        # ~~~~~~~~~~
-        logger.info('Waiting 30s before starting a new scan...')
-        time.sleep(30)
-
-    # training batch
-    settings['training']['pop_size'] = 40
-    settings['training']['max_iter'] = 2
-    settings['training']['tolerance'] = 1e-6
+    settings['scanning']['']
+    tasks = {
+        'laplace_filter': {
+            'function': 'laplace_filter',
+            'params':{
+                'sigma': 5,
+                'norm': False,
+                'roi': [[50, 110], [10, 140]],
+                },
+        },
+        'contrast_noise_ratio': {
+            'function': 'contrast_noise_ratio',
+            'params': {
+                'signal_roi': [[50, 110], [10, 140]],
+                'bg_roi': [[150,200], [50, 100]],
+            },
+        },
+        'mean':{'function': 'mean', 'params': {'roi': [[50, 110], [10, 140]],}},
+        'std':{'function': 'std', 'params': {'roi': [[50, 110], [10, 140]],}},
+    }
+    i = 1
+    # ~~~batch~~~~
+    settings['tasks'] = tasks
     run_asyncio(settings)
-    # ~~~~~~~~~~
-    logger.info('Waiting 30s before starting a new scan...')
+    logger.info(f'Finished batch run #{i}')
+    logger.info(f'Waiting for 30 seconds')
     time.sleep(30)
-
-
-    settings['training']['pop_size'] = 20
-    settings['training']['max_iter'] = 10
-    settings['training']['tolerance'] = 1e-6
+    i += 1
+    # ~~~batch~~~~
+    settings['tasks'] = {tasks['laplace_filter'],tasks['contrast_noise_ratio']}
     run_asyncio(settings)
-    # ~~~~~~~~~~
-    logger.info('Waiting 30s before starting a new scan...')
+    logger.info(f'Finished batch run #{i}')
+    logger.info(f'Waiting for 30 seconds')
     time.sleep(30)
-
-    settings['training']['pop_size'] = 20
-    settings['training']['max_iter'] = 4
-    settings['training']['tolerance'] = 1e-8
+    i += 1
+    # ~~~batch~~~~
+    settings['tasks'] = {tasks['mean'],tasks['contrast_noise_ratio']}
     run_asyncio(settings)
-    # ~~~~~~~~~~
-    logger.info('Waiting 30s before starting a new scan...')
+    logger.info(f'Finished batch run #{i}')
+    logger.info(f'Waiting for 30 seconds')
     time.sleep(30)
-
-    settings['training']['pop_size'] = 20
-    settings['training']['max_iter'] = 4
-    settings['training']['tolerance'] = 1e-8
+    i += 1
+    # ~~~batch~~~~
+    settings['tasks'] = deepcopy(tasks)
+    tasks['contrast_noise_ratio']['params']['bg_roi'] = [[200,-1], [0, -1]]
     run_asyncio(settings)
-    # ~~~~~~~~~~
-    logger.info('Waiting 30s before starting a new scan...')
-    time.sleep(30)
+    logger.info(f'Finished batch run #{i}')
+    logger.info(f'Waiting for 30 seconds')
+    i += 1
 
-    settings['training']['pop_size'] = 40
-    settings['training']['max_iter'] = 10
-    settings['training']['tolerance'] = 1e-8
-    run_asyncio(settings)
-    # ~~~~~~~~~~
-    logger.info('Waiting 30s before starting a new scan...')
-    time.sleep(30)
 
-    # covariance runs
-
-    settings['training']['pop_size'] = 20
-    settings['training']['max_iter'] = 2
-    settings['training']['tolerance'] = 1e-6
-    vals = [0.01,0.1,1,10]
-    for v in vals:
-        settings['acquisition_function']['params']['c'] = v
-        run_asyncio(settings)
-        # ~~~~~~~~~~
-        logger.info('Waiting 30s before starting a new scan...')
-        time.sleep(30)
-
-    
+   
 
 #############################################################################
 

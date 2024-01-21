@@ -74,6 +74,13 @@ def batches(settings,logger) -> None:
         i += 1
         # ~~~batch~~~~
         settings['tasks'] = deepcopy(tasks)
+        settings['gp']['fvgp']['init_hyperparameters'] = [1_000_000, 100, 100, 1]
+        settings['gp']['training']['hyperparameter_bounds'] = [
+            [1_000_000, 1_000_000_000],
+            [10, 1000],
+            [10, 1000],
+            [0.001, 4]
+            ]
         settings['acquisition_function']['params']['a'] = 0.1
         settings['cost_function']['params']['weight'] = 0.01
         tasks['contrast_noise_ratio']['params']['bg_roi'] = [[200,-1], [0, -1]]

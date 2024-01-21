@@ -19,60 +19,69 @@ batched = False
 
 
 def batches(settings,logger) -> None:
-
+    roi_1 = [[50, 190], [10, 140]]
+    roi_2 = [[50, 110], [10, 140]]
+    for roi in [roi_1,roi_2]:
     # a_vals = [0.01,1]
-    settings['scanning']['']
-    tasks = {
-        'laplace_filter': {
-            'function': 'laplace_filter',
-            'params':{
-                'sigma': 5,
-                'norm': False,
-                'roi': [[50, 110], [10, 140]],
-                },
-        },
-        'contrast_noise_ratio': {
-            'function': 'contrast_noise_ratio',
-            'params': {
-                'signal_roi': [[50, 110], [10, 140]],
-                'bg_roi': [[150,200], [50, 100]],
+        settings['scanning']['']
+        tasks = {
+            'laplace_filter': {
+                'function': 'laplace_filter',
+                'params':{
+                    'sigma': 5,
+                    'norm': False,
+                    'roi': roi,
+                    },
             },
-        },
-        'mean':{'function': 'mean', 'params': {'roi': [[50, 110], [10, 140]],}},
-        'std':{'function': 'std', 'params': {'roi': [[50, 110], [10, 140]],}},
-    }
-    i = 1
-    # ~~~batch~~~~
-    settings['tasks'] = tasks
-    run_asyncio(settings)
-    logger.info(f'Finished batch run #{i}')
-    logger.info(f'Waiting for 30 seconds')
-    time.sleep(30)
-    i += 1
-    # ~~~batch~~~~
-    settings['tasks'] = {tasks['laplace_filter'],tasks['contrast_noise_ratio']}
-    run_asyncio(settings)
-    logger.info(f'Finished batch run #{i}')
-    logger.info(f'Waiting for 30 seconds')
-    time.sleep(30)
-    i += 1
-    # ~~~batch~~~~
-    settings['tasks'] = {tasks['mean'],tasks['contrast_noise_ratio']}
-    run_asyncio(settings)
-    logger.info(f'Finished batch run #{i}')
-    logger.info(f'Waiting for 30 seconds')
-    time.sleep(30)
-    i += 1
-    # ~~~batch~~~~
-    settings['tasks'] = deepcopy(tasks)
-    tasks['contrast_noise_ratio']['params']['bg_roi'] = [[200,-1], [0, -1]]
-    run_asyncio(settings)
-    logger.info(f'Finished batch run #{i}')
-    logger.info(f'Waiting for 30 seconds')
-    i += 1
+            'contrast_noise_ratio': {
+                'function': 'contrast_noise_ratio',
+                'params': {
+                    'signal_roi': roi,
+                    'bg_roi': [[150,200], [50, 100]],
+                },
+            },
+            'mean':{'function': 'mean', 'params': {'roi': roi,}},
+            'std':{'function': 'std', 'params': {'roi': roi,}},
+        }
+        i = 1
 
+        # ~~~batch~~~~
+        settings['tasks'] = {tasks['mean'],tasks['laplace_filter']}
+        settings['acquisition_function']['params']['a'] = 0.1
+        settings['cost_function']['params']['weight'] = 0.01
+        run_asyncio(settings)
+        logger.info(f'Finished batch run #{i}')
+        logger.info(f'Waiting for 30 seconds')
+        time.sleep(30)
+        i += 1
+        # ~~~batch~~~~
+        settings['tasks'] = {tasks['laplace_filter'],tasks['contrast_noise_ratio']}
+        settings['acquisition_function']['params']['a'] = 0.1
+        settings['cost_function']['params']['weight'] = 0.01
+        run_asyncio(settings)
+        logger.info(f'Finished batch run #{i}')
+        logger.info(f'Waiting for 30 seconds')
+        time.sleep(30)
+        i += 1
+        # ~~~batch~~~~
+        settings['tasks'] = {tasks['std'],tasks['laplace_filter']}
+        settings['acquisition_function']['params']['a'] = 0.1
+        settings['cost_function']['params']['weight'] = 0.01
+        run_asyncio(settings)
+        logger.info(f'Finished batch run #{i}')
+        logger.info(f'Waiting for 30 seconds')
+        time.sleep(30)
+        i += 1
+        # ~~~batch~~~~
+        settings['tasks'] = deepcopy(tasks)
+        settings['acquisition_function']['params']['a'] = 0.1
+        settings['cost_function']['params']['weight'] = 0.01
+        tasks['contrast_noise_ratio']['params']['bg_roi'] = [[200,-1], [0, -1]]
+        run_asyncio(settings)
+        logger.info(f'Finished batch run #{i}')
+        logger.info(f'Waiting for 30 seconds')
+        i += 1
 
-   
 
 #############################################################################
 

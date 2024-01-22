@@ -67,21 +67,21 @@ acquisition_function:
     norm: 1 # normalization factor for acquisition function
     c: 0 # covariance weight
 
-cost_function:
-  function: manhattan_avoid_repetition # name of the function found in gp/cost_functions.py
-  params: 
-    speed: 300 # um/s
-    dwell_time: 2 # seconds
-    dead_time: 0.1 # seconds
-    min_distance: 4.99 # This should always be just below the step size of the scanner
-    weight: 0.01 # weight of the cost function
+# cost_function:
+#   function: manhattan_avoid_repetition # name of the function found in gp/cost_functions.py
+#   params: 
+#     speed: 300 # um/s
+#     dwell_time: 2 # seconds
+#     dead_time: 0.1 # seconds
+#     min_distance: 4.99 # This should always be just below the step size of the scanner
+#     weight: 0.01 # weight of the cost function
 
 gp:
   optimizer:
     output_space_dimension: 1 # just leave it at 1
 
   fvgp:
-    init_hyperparameters: [1_000_000, 100, 100, 0.5]
+    init_hyperparameters: [1_000_000, 100, 100, 100, 0.5]
     compute_device: cpu # cpu or cuda:0
     gp_kernel_function: null
     gp_mean_function: null
@@ -91,6 +91,7 @@ gp:
   training:
     hyperparameter_bounds: [
       [1_000_000, 1_000_000_000],
+      [10, 1000],
       [10, 1000],
       [10, 1000],
       [0.001, 1]

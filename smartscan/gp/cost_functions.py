@@ -125,12 +125,12 @@ def manhattan_cost_function(
         logger = logging.getLogger('manhattan_cost_function')
 
     origin = np.array(origin)
-    assert origin.shape[0] == 2, "origin must be a 2D point"
+    # assert origin.shape[0] == 2, "origin must be a 2D point"
 
     x = np.array(x)
     if x.ndim == 1:
         x = x.reshape(-1,1) # make sure x is a 2D array
-    assert x.shape[1] == 2, "x must be a 2D point or a list of 2D points"
+    # assert x.shape[1] == 2, "x must be a 2D point or a list of 2D points"
 
     # gather parameters
     if cost_func_params is None:
@@ -159,14 +159,14 @@ def manhattan_cost_function(
 def manhattan_avoid_repetition(
         origin: np.ndarray[float],
         x: Sequence[Tuple[float,float]],
-        cost_func_params: dict[str, Any] = None,
+        cost_func_params: dict[str, Any] = {},
     ) -> float:
     """Avoid repeating the same point twice and compute the movement cost between two points"""
     logger = logging.getLogger('manhattan_avoid_repetition')
     min_distance = cost_func_params.pop('min_distance',1.0)
     gp_x_data:np.ndarray = cost_func_params.pop('prev_points',np.empty((0,2)))
     
-    prev_points = gp_x_data[:,:2]
+    prev_points = gp_x_data[:,:-2]
 
     if prev_points.shape[0] > 0:
         for xx in x:

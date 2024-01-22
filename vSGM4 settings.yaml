@@ -11,7 +11,7 @@ logging:
 
 data:
   data_dir: D:\data\ARPESdatabase\maps\SGM4
-  file_name: MBT_C_62 # Z006_35_0.h5
+  file_name: Cleave3_52 # MBT_C_62 # Z006_35_0.h5
   target_dir: C:\Users\stein\OneDrive\Documents\_Work\_code\ARPES-ASTRID\smartscan\data
 
 scan:

@@ -246,10 +246,12 @@ class AsyncScanManager:
                 else:
                     pp = func(pp, **kwargs)
             self.last_spectrum = pp
+            t1 = time.time()
             self.logger.debug(
                 f"Preprocessing {pos} | shape {pp.shape} | mean : {pp.mean():.3f} ± {pp.std():.3f} | time: {t1-t0:.3f} s"
             )
-        t1 = time.time()
+        else:
+            t1 = time.time()
 
         # reduce data
         reduced = []

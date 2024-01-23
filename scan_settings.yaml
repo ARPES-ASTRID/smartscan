@@ -5,7 +5,7 @@ TCP:
   timeout: 10 # seconds
 
 logging:
-  level: INFO
+  level: INFP
   directory: null
   formatter: '%(asctime)s | %(name)s | %(levelname)-8s | %(message)s'
 

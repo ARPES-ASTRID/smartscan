@@ -443,8 +443,10 @@ class AsyncScanManager:
 
         if self.gp.cost_function_parameters is not None:
             self.gp.cost_function_parameters.update({'prev_points': self.gp.x_data})
+
         if self.last_asked_position is None:
             self.last_asked_position = self.positions[-1]
+        
         self.logger.debug(f"ASK: Last asked position: {self.last_asked_position}")
         next_pos = self.gp.ask(
             position=np.array(self.last_asked_position),

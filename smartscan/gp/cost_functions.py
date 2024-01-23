@@ -163,10 +163,17 @@ def manhattan_avoid_repetition(
     ) -> float:
     """Avoid repeating the same point twice and compute the movement cost between two points"""
     logger = logging.getLogger('manhattan_avoid_repetition')
-    min_distance = cost_func_params.pop('min_distance',1.0)
-    gp_x_data:np.ndarray = cost_func_params.pop('prev_points',np.empty((0,2)))
+    logger.debug(f"cost func params:")
+    for k,v in cost_func_params.items():
+        if isinstance(v,np.ndarray):
+            logger.debug(f'\t{k}: {v.shape}')
+        else:
+            logger.debug(f'\t{k}: {v}')
+    cfp = cost_func_params.copy()
+    min_distance = cfp.pop('min_distance')
+    gp_x_data:np.ndarray = cfp.pop('prev_points')
     
-    prev_points = gp_x_data[:,:-2]
+    prev_points = np.array(gp_x_data)[:,:-1]
 
     if prev_points.shape[0] > 0:
         for xx in x:
@@ -175,4 +182,4 @@ def manhattan_avoid_repetition(
                 idx = np.argmin(all_distances - min_distance)
                 logger.warning(f"Point {np.asarray(xx).ravel()} close to previous point {prev_points[idx]}: d={all_distances[idx]}")
                 return [1_000_000_000]
-    return manhattan_cost_function(origin,x,cost_func_params)
+    return manhattan_cost_function(origin,x,cfp)

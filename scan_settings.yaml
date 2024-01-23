@@ -48,16 +48,16 @@ tasks: # list of tasks to which to reduce the data
     params:
       sigma: 5
       norm: False
-      roi: [[50, 110], [10, 140]]
+      roi: [[50, 190], [10, 140]]
   contrast_noise_ratio:
     function: contrast_noise_ratio
     params: 
-      signal_roi: [[50, 110], [10, 140]]
+      signal_roi: [[50, 190], [10, 140]]
       bg_roi: [[150,200], [50, 100]]
   mean: # name of the task found in gp/tasks.py
     function: mean # name of the function
     params: 
-      roi: [[50, 110], [10, 140]]
+      roi: [[50, 190], [10, 140]]
 
 acquisition_function:
   function: acquisition_function_nd # name of the function found in gp/acquisition_functions.py

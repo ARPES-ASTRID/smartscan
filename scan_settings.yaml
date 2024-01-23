@@ -5,7 +5,7 @@ TCP:
   timeout: 10 # seconds
 
 logging:
-  level: INFO
+  level: INFP
   directory: null
   formatter: '%(asctime)s | %(name)s | %(levelname)-8s | %(message)s'
 
@@ -81,7 +81,13 @@ gp:
     output_space_dimension: 1 # just leave it at 1
 
   fvgp:
-    init_hyperparameters: [1_000_000, 100, 100, 0.5]
+    init_hyperparameters: [
+      1_000_000, 
+      100, 
+      100, 
+      100, 
+      0.5
+    ]
     compute_device: cpu # cpu or cuda:0
     gp_kernel_function: null
     gp_mean_function: null
@@ -91,6 +97,7 @@ gp:
   training:
     hyperparameter_bounds: [
       [1_000_000, 1_000_000_000],
+      [10, 1000],
       [10, 1000],
       [10, 1000],
       [0.001, 1]

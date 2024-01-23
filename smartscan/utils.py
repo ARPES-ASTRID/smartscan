@@ -11,10 +11,11 @@ def pretty_print_time(t: float) -> str:
     return f'{h:02d}:{m:02d}:{s:02d}'
 
 def manhattan_distance(x: tuple[float], y: tuple[float]) -> float:
-    return np.abs(x[0]-y[0])+np.abs(x[1]-y[1])
+    return np.sum(np.abs(np.asarray(x)-np.asarray(y)))
 
 def euclidean_distance(x: tuple[float], y: tuple[float]) -> float:
     return np.sqrt((x[0]-y[0])**2+(x[1]-y[1])**2)
+
 
 def get_distance(x,y,distance_type):
     if distance_type == 'manhattan':

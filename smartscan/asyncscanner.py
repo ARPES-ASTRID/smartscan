@@ -5,6 +5,7 @@ import logging
 from functools import partial
 import time
 import shutil
+import traceback
 
 import yaml
 import asyncio
@@ -114,16 +115,16 @@ class AsyncScanManager:
         self.last_spectrum = None
 
         # scan initialization points
-        self.relative_inital_points = [ # currently only the border
-            [0, 0],
-            [0, 0.5],
-            [0, 1],
-            [0.5, 1],
-            [1, 1],
-            [1, 0.5],
-            [1, 0],
-            [0.5, 0],
-        ]
+        self.relative_inital_points = None # [ # currently only the border
+        #     [0, 0],
+        #     [0, 0.5],
+        #     [0, 1],
+        #     [0.5, 1],
+        #     [1, 1],
+        #     [1, 0.5],
+        #     [1, 0],
+        #     [0.5, 0],
+        # ]
 
     @property
     def val_array(self) -> NDArray[Any]:
@@ -245,10 +246,12 @@ class AsyncScanManager:
                 else:
                     pp = func(pp, **kwargs)
             self.last_spectrum = pp
+            t1 = time.time()
             self.logger.debug(
                 f"Preprocessing {pos} | shape {pp.shape} | mean : {pp.mean():.3f} ± {pp.std():.3f} | time: {t1-t0:.3f} s"
             )
-        t1 = time.time()
+        else:
+            t1 = time.time()
 
         # reduce data
         reduced = []
@@ -440,8 +443,10 @@ class AsyncScanManager:
 
         if self.gp.cost_function_parameters is not None:
             self.gp.cost_function_parameters.update({'prev_points': self.gp.x_data})
+
         if self.last_asked_position is None:
             self.last_asked_position = self.positions[-1]
+        
         self.logger.debug(f"ASK: Last asked position: {self.last_asked_position}")
         next_pos = self.gp.ask(
             position=np.array(self.last_asked_position),
@@ -469,7 +474,7 @@ class AsyncScanManager:
         self.iter_counter = 0
         self.logger.info("Starting GP loop.")
         await asyncio.sleep(1)  # wait a bit before starting
-        while not self._ready_for_gp:
+        while not self._ready_for_gp and self.relative_inital_points is not None:
             has_new_data = self.update_data_and_positions()
             if len(self.positions) > len(self.relative_inital_points):
                 self._ready_for_gp = True
@@ -568,7 +573,7 @@ class AsyncScanManager:
                 self.fetch_data_loop(),
                 self.reduction_loop(),
                 self.gp_loop(),
-                self.plotting_loop(),
+                # self.plotting_loop(),
             )
         try:
             await asyncio.gather(*tasks)
@@ -581,7 +586,13 @@ class AsyncScanManager:
                 except:
                     pass
         except Exception as e:
-            self.logger.error(f"{type(e)} stopping all loops: {e}")
+            self.logger.critical(f"{type(e).__name__} stopping all loops. ")
+            error_traceback = ''
+            for line in traceback.format_tb(e.__traceback__):
+                error_traceback += line
+            self.logger.error(f"Traceback: {error_traceback}")
+            self.logger.error(f"{type(e).__name__}: {e}")
+            
         finally:
             self.logger.info("Finalizing loop gathering: All loops finished.")
 
@@ -607,7 +618,7 @@ class AsyncScanManager:
     
     def init_scan(self) -> None:
         """Initialize the scan."""
-        self.logger.info(f"Initializing scan. with {len(self.relative_inital_points)} points.")
+        self.logger.info(f"Initializing scan.")
         # TODO: add this to settings and give more options
         self.remote.START()
         while True:
@@ -624,12 +635,15 @@ class AsyncScanManager:
         self.connect()
         self.save_log_to_file()
         self.save_settings()
-        for p in self.relative_inital_points:
-            x = p[0] * self.remote.limits[0][1] + (1 - p[0]) * self.remote.limits[0][0]
-            y = p[1] * self.remote.limits[1][1] + (1 - p[1]) * self.remote.limits[1][0]
-            self.remote.ADD_POINT(x, y)
-            self.last_asked_position = (x,y)
-            self.logger.debug(f"Added point {p} to scan.")
+
+        if self.relative_inital_points is not None:
+            self.logger.info(f"Adding {len(self.relative_inital_points)} points to scan.")
+            for p in self.relative_inital_points:
+                x = p[0] * self.remote.limits[0][1] + (1 - p[0]) * self.remote.limits[0][0]
+                y = p[1] * self.remote.limits[1][1] + (1 - p[1]) * self.remote.limits[1][0]
+                self.remote.ADD_POINT(x, y)
+                self.last_asked_position = (x,y)
+                self.logger.debug(f"Added point {p} to scan.")
 
     def stop(self) -> None:
         self.logger.info("Stopping all loops.")

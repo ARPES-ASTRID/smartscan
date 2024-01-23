@@ -19,75 +19,80 @@ batched = False
 
 
 def batches(settings,logger) -> None:
-    roi_1 = [[50, 190], [10, 140]]
+    roi = [[50, 190], [10, 140]]
     roi_2 = [[50, 110], [10, 140]]
-    for roi in [roi_1,roi_2]:
+    # for roi in [roi_1,roi_2]:
     # a_vals = [0.01,1]
-        settings['scanning']['']
-        tasks = {
-            'laplace_filter': {
-                'function': 'laplace_filter',
-                'params':{
-                    'sigma': 5,
-                    'norm': False,
-                    'roi': roi,
-                    },
-            },
-            'contrast_noise_ratio': {
-                'function': 'contrast_noise_ratio',
-                'params': {
-                    'signal_roi': roi,
-                    'bg_roi': [[150,200], [50, 100]],
+    settings['scanning']['']
+    tasks = {
+        'laplace_filter': {
+            'function': 'laplace_filter',
+            'params':{
+                'sigma': 5,
+                'norm': False,
+                'roi': roi,
                 },
+        },
+        'contrast_noise_ratio': {
+            'function': 'contrast_noise_ratio',
+            'params': {
+                'signal_roi': roi,
+                'bg_roi': [[150,200], [50, 100]],
             },
-            'mean':{'function': 'mean', 'params': {'roi': roi,}},
-            'std':{'function': 'std', 'params': {'roi': roi,}},
-        }
-        i = 1
+        },
+        'mean':{'function': 'mean', 'params': {'roi': roi,}},
+        'std':{'function': 'std', 'params': {'roi': roi,}},
+    }
+    i = 1
 
+    # ~~~batch~~~~
+    settings['tasks'] = {tasks['mean'],tasks['laplace_filter']}
+    settings['acquisition_function']['params']['a'] = 0.1
+    settings['cost_function']['params']['weight'] = 0.01
+    run_asyncio(settings)
+    logger.info(f'Finished batch run #{i}')
+    logger.info(f'Waiting for 30 seconds')
+    time.sleep(30)
+    i += 1
+    # ~~~batch~~~~
+    settings['tasks'] = {tasks['mean'],tasks['laplace_filter']}
+    settings['acquisition_function']['params']['a'] = 0.1
+    settings['cost_function']['params']['weight'] = 0.1
+    run_asyncio(settings)
+    logger.info(f'Finished batch run #{i}')
+    logger.info(f'Waiting for 30 seconds')
+    time.sleep(30)
+    i += 1
+    # ~~~batch~~~~
+    settings['tasks'] = {tasks['mean'],tasks['laplace_filter']}
+    settings['acquisition_function']['params']['a'] = 0.1
+    settings['cost_function']['params']['weight'] = 1.
+    run_asyncio(settings)
+    logger.info(f'Finished batch run #{i}')
+    logger.info(f'Waiting for 30 seconds')
+    time.sleep(30)
+    i += 1
+    # ~~~batch~~~~
+    settings['tasks'] = {tasks['mean'],tasks['laplace_filter']}
+    settings['acquisition_function']['params']['a'] = 0.5
+    settings['cost_function']['params']['weight'] = 0.01
+    run_asyncio(settings)
+    logger.info(f'Finished batch run #{i}')
+    logger.info(f'Waiting for 30 seconds')
+    time.sleep(30)
+    i += 1
         # ~~~batch~~~~
-        settings['tasks'] = {tasks['mean'],tasks['laplace_filter']}
-        settings['acquisition_function']['params']['a'] = 0.1
-        settings['cost_function']['params']['weight'] = 0.01
-        run_asyncio(settings)
-        logger.info(f'Finished batch run #{i}')
-        logger.info(f'Waiting for 30 seconds')
-        time.sleep(30)
-        i += 1
-        # ~~~batch~~~~
-        settings['tasks'] = {tasks['laplace_filter'],tasks['contrast_noise_ratio']}
-        settings['acquisition_function']['params']['a'] = 0.1
-        settings['cost_function']['params']['weight'] = 0.01
-        run_asyncio(settings)
-        logger.info(f'Finished batch run #{i}')
-        logger.info(f'Waiting for 30 seconds')
-        time.sleep(30)
-        i += 1
-        # ~~~batch~~~~
-        settings['tasks'] = {tasks['std'],tasks['laplace_filter']}
-        settings['acquisition_function']['params']['a'] = 0.1
-        settings['cost_function']['params']['weight'] = 0.01
-        run_asyncio(settings)
-        logger.info(f'Finished batch run #{i}')
-        logger.info(f'Waiting for 30 seconds')
-        time.sleep(30)
-        i += 1
-        # ~~~batch~~~~
-        settings['tasks'] = deepcopy(tasks)
-        settings['gp']['fvgp']['init_hyperparameters'] = [1_000_000, 100, 100, 1]
-        settings['gp']['training']['hyperparameter_bounds'] = [
-            [1_000_000, 1_000_000_000],
-            [10, 1000],
-            [10, 1000],
-            [0.001, 4]
-            ]
-        settings['acquisition_function']['params']['a'] = 0.1
-        settings['cost_function']['params']['weight'] = 0.01
-        tasks['contrast_noise_ratio']['params']['bg_roi'] = [[200,-1], [0, -1]]
-        run_asyncio(settings)
-        logger.info(f'Finished batch run #{i}')
-        logger.info(f'Waiting for 30 seconds')
-        i += 1
+    settings['tasks'] = {tasks['mean'],tasks['laplace_filter']}
+    settings['acquisition_function']['params']['a'] = 0.05
+    settings['cost_function']['params']['weight'] = 0.01
+    run_asyncio(settings)
+    logger.info(f'Finished batch run #{i}')
+    logger.info(f'Waiting for 30 seconds')
+    time.sleep(30)
+    i += 1
+
+
+
 
 
 #############################################################################

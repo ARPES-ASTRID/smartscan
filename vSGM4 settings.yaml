@@ -5,7 +5,7 @@ TCP:
   timeout: 10 # seconds
 
 logging:
-  level: debug
+  level: info
   directory: null
   formatter: '%(asctime)s - %(name)s - %(levelname)s | %(message)s'
 
@@ -17,4 +17,4 @@ data:
 scan:
   save_to_file: false
   simulate_times: True
-  # dwell_time: 0.1 # seconds
+  dwell_time: 1 # seconds

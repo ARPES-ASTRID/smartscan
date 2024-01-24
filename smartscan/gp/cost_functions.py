@@ -173,13 +173,23 @@ def manhattan_avoid_repetition(
     min_distance = cfp.pop('min_distance')
     gp_x_data:np.ndarray = cfp.pop('prev_points')
     
-    prev_points = np.array(gp_x_data)[:,:-1]
+    prev_points = np.array(gp_x_data)[::2,:-1]
+    logger.debug(f"some prev points: {prev_points[-3:]}")
 
     if prev_points.shape[0] > 0:
+        min_dist = np.inf
+        x_ = None
         for xx in x:
             all_distances = np.linalg.norm(xx-prev_points)
+            cur_min = np.min(all_distances)
+            if cur_min < min_dist:
+                x_ = xx
+                min_dist = cur_min
+            min_dist = min(min_dist,np.min(all_distances))
             if np.any(all_distances < min_distance):
                 idx = np.argmin(all_distances - min_distance)
                 logger.warning(f"Point {np.asarray(xx).ravel()} close to previous point {prev_points[idx]}: d={all_distances[idx]}")
                 return [1_000_000_000]
+        logger.debug(f"closest point to {x_} is {min_dist} away")
     return manhattan_cost_function(origin,x,cfp)
+

@@ -125,16 +125,16 @@ class AsyncScanManager:
         self.last_spectrum = None
 
         # scan initialization points
-        self.relative_inital_points = None # [ # currently only the border
-        #     [0, 0],
-        #     [0, 0.5],
-        #     [0, 1],
-        #     [0.5, 1],
-        #     [1, 1],
-        #     [1, 0.5],
-        #     [1, 0],
-        #     [0.5, 0],
-        # ]
+        self.relative_inital_points = [ # currently only the border
+            [0, 0],
+            [0, 0.5],
+            [0, 1],
+            [0.5, 1],
+            [1, 1],
+            [1, 0.5],
+            [1, 0],
+            [0.5, 0],
+        ]
 
     @property
     def filename(self) -> Path:
@@ -835,7 +835,7 @@ class AsyncScanManager:
         logging_filename = self.filename.with_suffix(".log")
         self.logger.info(f"Saving INFO log to {logging_filename}")
         fh = logging.FileHandler(logging_filename)
-        fh.setLevel("INFO")
+        fh.setLevel("DEBUG")
         formatter = logging.Formatter(self.settings['logging']['formatter'])
         fh.setFormatter(formatter)
         self.logger.addHandler(fh)

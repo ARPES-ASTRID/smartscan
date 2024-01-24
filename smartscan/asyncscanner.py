@@ -207,8 +207,8 @@ class AsyncScanManager:
     def errors(self) -> np.ndarray:
         """Get the errors."""
         if self.settings['scanning']['merge_unique_positions']:
-
-            return np.array([[1/np.sqrt(len(d))]*len(self.task_labels) for d in self._all_spectra_dict.values()], dtype=float)
+            base_error = self.settings['scanning']['base_error']
+            return np.array([[base_error/np.sqrt(len(d))]*len(self.task_labels) for d in self._all_spectra_dict.values()], dtype=float)
         else:
             return np.ones((len(self.task_labels),len(self._all_spectra)), dtype=float)
 

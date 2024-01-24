@@ -83,15 +83,15 @@ class Plotter:
         for name in posteriors:
             if self.plots[name] is None:
                 self.plots[name] = self.axes[name].imshow(
-                    self.post_mean_0,
+                    getattr(self, name),
                     extent=self.extent, 
                     origin='lower',
                     aspect="equal",
                     cmap=self.cmap,
                 )
             else:
-                self.plots[name].set_data(self.post_mean_0)
-                self.plots[name].set_clim(np.quantile(self.post_mean_0,(0.02,0.98)))
+                self.plots[name].set_data(getattr(self, name))
+                self.plots[name].set_clim(np.quantile(self.posterior_mean_0,(0.02,0.98)))
         
     def draw_acquisition_function(self):
         if self.plots['acquisition_function'] is None:
@@ -101,11 +101,11 @@ class Plotter:
                 origin='lower',
                 aspect="equal",
                 cmap=self.cmap,
-                alpha=0.5,
+                # alpha=0.5,
             )
             self.plots['aqf_scatter'] = self.axes['acquisition_function'].scatter(
                 self.pos[:,0],self.pos[:,1],
-                s=50, 
+                s=100, 
                 c=self.val[:,0],
                 cmap='inferno', 
                 marker='x'
@@ -219,21 +219,21 @@ class Plotter:
         if w is None:
             w = (1,1)
 
-        self.post_mean_0 = np.reshape(gp.posterior_mean(self.x_pred[0])["f(x)"],shape) * w[0]
-        self.post_var_0 = np.reshape(gp.posterior_covariance(self.x_pred[0])["v(x)"],shape) * w[0]
-        self.post_mean_1 = np.reshape(gp.posterior_mean(self.x_pred[1])["f(x)"],shape) * w[1]
-        self.post_var_1 = np.reshape(gp.posterior_covariance(self.x_pred[1])["v(x)"],shape) * w[1]
+        self.posterior_mean_0 = np.reshape(gp.posterior_mean(self.x_pred[0])["f(x)"],shape) * w[0]
+        self.posterior_variance_0 = np.reshape(gp.posterior_covariance(self.x_pred[0])["v(x)"],shape) * w[0]
+        self.posterior_mean_1 = np.reshape(gp.posterior_mean(self.x_pred[1])["f(x)"],shape) * w[1]
+        self.posterior_variance_1 = np.reshape(gp.posterior_covariance(self.x_pred[1])["v(x)"],shape) * w[1]
         
-        aqf = norm * (a * np.sqrt(w[0]*self.post_var_0+w[1]*self.post_var_1) +(w[0]*self.post_mean_0 + w[1]*self.post_mean_1))        
+        aqf = norm * (a * np.sqrt(w[0]*self.posterior_variance_0+w[1]*self.posterior_variance_1) +(w[0]*self.posterior_mean_0 + w[1]*self.posterior_mean_1))        
         self.aqf = np.rot90(aqf,k=-1)[:,::-1]
 
     def simulate_posterior(self) -> None:
         """ Simulate a posterior mean and variance
         """
-        self.post_mean_0 = np.random.random(self.map_shape)
-        self.post_var_0 = np.random.random(self.map_shape)
-        self.post_mean_1 = np.random.random(self.map_shape)
-        self.post_var_1 = np.random.random(self.map_shape)
+        self.posterior_mean_0 = np.random.random(self.map_shape)
+        self.posterior_variance_0 = np.random.random(self.map_shape)
+        self.posterior_mean_1 = np.random.random(self.map_shape)
+        self.posterior_variance_1 = np.random.random(self.map_shape)
         self.aqf = np.random.random(self.map_shape)
         self.pos = np.random.random((10,2))
         self.val = np.random.random((10,2))

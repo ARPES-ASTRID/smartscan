@@ -15,7 +15,7 @@ from smartscan.utils import ColoredFormatter
 from smartscan import AsyncScanManager
 
 
-batched = False
+batched = True
 
 
 def batches(settings,logger) -> None:

@@ -1,4 +1,5 @@
 from typing import List, Any
+from xml.sax.handler import property_lexical_handler
 from numpy.typing import NDArray
 from pathlib import Path
 import logging
@@ -98,6 +99,8 @@ class AsyncScanManager:
         self._all_spectra_dict = {}
         self._mean_spectra_dict = {}
         self._task_dict = {}
+        self._has_new_data: bool = False
+
 
         self._raw_data_queue: asyncio.Queue = asyncio.Queue()
         self._reduced_data_queue: asyncio.Queue = asyncio.Queue()
@@ -109,7 +112,6 @@ class AsyncScanManager:
         self.gp = None
         self._should_stop: bool = False
         self._ready_for_gp: bool = False
-
         # init data
         # self.positions: List = []
         # self.unique_positions: List = []
@@ -146,10 +148,21 @@ class AsyncScanManager:
         return filename
 
     @property
+    def n_points(self) -> int:
+        """Get the number of points."""
+        return len(self.positions)
+    
+    @property
+    def n_spectra(self) -> int:
+        """Get the number of spectra."""
+        each = [len(d) for d in self._all_spectra_dict.values()]
+        return sum(each)
+
+    @property
     def positions(self) -> np.ndarray:
         """Get the positions."""
         if self.settings['scanning']['merge_unique_positions']:
-            return np.array(self._mean_spectra_dict.keys())
+            return np.array([np.array(p) for p in self._mean_spectra_dict.keys()])
         else:
             return np.array(self._all_positions, dtype=float)
     
@@ -157,17 +170,18 @@ class AsyncScanManager:
     def values(self) -> np.ndarray:
         """Get the values."""
         if self.settings['scanning']['merge_unique_positions']:
-            return np.array(self._mean_spectra_dict.values())
+            return np.array(list(self._task_dict.values()))
         else:
-            return np.array(self._all_spectra, dtype=float)
+            return np.array(self._all_tasks, dtype=float)
         
     @property
     def errors(self) -> np.ndarray:
         """Get the errors."""
         if self.settings['scanning']['merge_unique_positions']:
-            return np.array([1/np.sqrt(len(d)) for d in self._all_spectra_dict.values()])
+
+            return np.array([[1/np.sqrt(len(d))]*len(self.task_labels) for d in self._all_spectra_dict.values()], dtype=float)
         else:
-            return np.ones(len(self._all_spectra), dtype=float)
+            return np.ones((len(self.task_labels),len(self._all_spectra)), dtype=float)
 
     async def fetch_and_reduce(self) -> None:
         """Fetch data from SGM4 and reduce it."""
@@ -185,12 +199,13 @@ class AsyncScanManager:
                 else:
                     self._all_spectra_dict[p] = [data]
                     self._mean_spectra_dict[p] = data
-                self._task_dict[p] = self.reduce(pos, self._mean_spectra_dict[p])
+                self._task_dict[p] = self._reduce(pos, self._mean_spectra_dict[p])
                 self.logger.debug(f'Reduced data: {p}: {self._task_dict[p]}')
                 self.logger.info(f'Updated data: {p}: tasks {self._task_dict[p]} | {len(self._all_spectra_dict[p])} spectra ')
             else:    
                 self._all_positions.append(pos)
                 self._all_spectra.append(data)
+            self._has_new_data = True
             return True
         else:
             self.logger.debug("No data received.")
@@ -441,6 +456,7 @@ class AsyncScanManager:
                 vals = vals * self.get_taks_normalization_weights(update=update_normalization)
             self.logger.info(f"TELL GP | pos: {pos[-1]} | tasks: {vals[-1]}")
             self.gp.tell(pos, vals, variances=self.errors)
+            self._has_new_data = False
 
     # GP loop
     def init_gp(self) -> None:
@@ -577,7 +593,7 @@ class AsyncScanManager:
         self.logger.info("Starting GP loop.")
         await asyncio.sleep(1)  # wait a bit before starting
         while not self._ready_for_gp and self.relative_inital_points is not None:
-            has_new_data = self.update_data_and_positions()
+            # has_new_data = self.update_data_and_positions()
             if len(self.positions) > len(self.relative_inital_points):
                 self._ready_for_gp = True
             else:
@@ -593,11 +609,11 @@ class AsyncScanManager:
                 )
                 self._should_stop = True
                 break
-            has_new_data = self.update_data_and_positions()
-            if has_new_data:
+            # has_new_data = self.update_data_and_positions()
+            if self._has_new_data:
                 self.iter_counter += 1
                 self.logger.info(
-                    f"GP iter: {self.iter_counter:3.0f}/{self.settings['scanning']['max_points']:4.0f} | {len(self.positions)} samples"
+                    f"GP iter: {self.iter_counter:3.0f}/{self.settings['scanning']['max_points']:4.0f} | {self.n_points} samples | {self.n_spectra} spectra"
                 )
                 if self.gp is None:
                     self.init_gp()  # initialize GP at first iteration
@@ -673,9 +689,9 @@ class AsyncScanManager:
         tasks = (
                 self.killer_loop(),
                 self.fetch_data_loop(),
-                self.reduction_loop(),
+                # self.reduction_loop(),
                 self.gp_loop(),
-                # self.plotting_loop(),
+                self.plotting_loop(),
             )
         try:
             await asyncio.gather(*tasks)
@@ -831,7 +847,6 @@ class AsyncScanManager:
             self.finalize()
         except Exception as e:
             self.logger.warn(f"{type(e).__name__} while deleting asyncscanner instance: {e}")
-
 
 if __name__ == "__main__":
     pass

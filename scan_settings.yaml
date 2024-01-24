@@ -48,16 +48,16 @@ tasks: # list of tasks to which to reduce the data
     params:
       sigma: 5
       norm: False
-      roi: [[50, 190], [10, 140]]
+      roi: [[145, 190], [10, 140]]
   # contrast_noise_ratio:
   #   function: contrast_noise_ratio
   #   params: 
-  #     signal_roi: [[50, 190], [10, 140]]
-  #     bg_roi: [[150,200], [50, 100]]
+  #     signal_roi: [[145, 190], [10, 140]]
+  #     bg_roi: [[200,-1], [50, 100]]
   mean: # name of the task found in gp/tasks.py
     function: mean # name of the function
     params: 
-      roi: [[50, 190], [10, 140]]
+      roi: [[145, 190], [10, 140]]
 
 acquisition_function:
   function: acquisition_function_nd # name of the function found in gp/acquisition_functions.py
@@ -73,7 +73,7 @@ cost_function:
     speed: 300 # um/s
     dwell_time: 2 # seconds
     dead_time: 0.1 # seconds
-    min_distance: 1.99 # This should always be just below the step size of the scanner
+    min_distance: 4.99 # This should always be just below the step size of the scanner
     weight: 0.01 # weight of the cost function
 
 gp:
@@ -85,7 +85,7 @@ gp:
       1_000_000, 
       100, 
       100, 
-      100, 
+      # 100, 
       0.5
     ]
     compute_device: cpu # cpu or cuda:0
@@ -99,8 +99,8 @@ gp:
       [1_000_000, 1_000_000_000],
       [10, 1000],
       [10, 1000],
-      [10, 1000],
-      [0.001, 1]
+      # [10, 1000],
+      [0.001, 5]
     ]
     pop_size: 20 # population size for global optimization
     max_iter: 2 # maximum number of iterations for global optimization

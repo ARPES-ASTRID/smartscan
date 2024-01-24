@@ -95,8 +95,15 @@ class AsyncScanManager:
         )
 
         # init queues
+        self._all_spectra_dict = {}
+        self._mean_spectra_dict = {}
+        self._task_dict = {}
+
         self._raw_data_queue: asyncio.Queue = asyncio.Queue()
         self._reduced_data_queue: asyncio.Queue = asyncio.Queue()
+        self._all_positions: List = []
+        self._all_spectra: List = []
+        self._all_tasks: List = []
 
         # init GP
         self.gp = None
@@ -104,9 +111,10 @@ class AsyncScanManager:
         self._ready_for_gp: bool = False
 
         # init data
-        self.positions: List = []
-        self.unique_positions: List = []
-        self.values: List = []
+        # self.positions: List = []
+        # self.unique_positions: List = []
+        # self.values: List = []
+        # self.unique_values: List = []
         self.hyperparameter_history = {}
         self.task_weights = None  # for fixed task weights
         self.last_asked_position = None
@@ -127,15 +135,114 @@ class AsyncScanManager:
         # ]
 
     @property
-    def val_array(self) -> NDArray[Any]:
-        """Get the values as an array."""
-        return np.asarray(self.values, dtype=float)
+    def filename(self) -> Path:
+        """Get the file stem."""
+        filename: Path = Path(self.remote.filename)
+        folder: Path = filename.parent
+        if not filename.exists():
+            if not folder.exists():
+                raise FileNotFoundError(f"Folder {folder} does not exist.")
+        self.logger.debug(f"Saving settings to {folder}.")
+        return filename
 
     @property
-    def pos_array(self) -> NDArray[Any]:
-        """Get the positions as an array."""
-        return np.asarray(self.positions, dtype=float)
+    def positions(self) -> np.ndarray:
+        """Get the positions."""
+        if self.settings['scanning']['merge_unique_positions']:
+            return np.array(self._mean_spectra_dict.keys())
+        else:
+            return np.array(self._all_positions, dtype=float)
+    
+    @property
+    def values(self) -> np.ndarray:
+        """Get the values."""
+        if self.settings['scanning']['merge_unique_positions']:
+            return np.array(self._mean_spectra_dict.values())
+        else:
+            return np.array(self._all_spectra, dtype=float)
+        
+    @property
+    def errors(self) -> np.ndarray:
+        """Get the errors."""
+        if self.settings['scanning']['merge_unique_positions']:
+            return np.array([1/np.sqrt(len(d)) for d in self._all_spectra_dict.values()])
+        else:
+            return np.ones(len(self._all_spectra), dtype=float)
 
+    async def fetch_and_reduce(self) -> None:
+        """Fetch data from SGM4 and reduce it."""
+        self.logger.debug("Fetching data...")
+        pos, data = await self.fetch_data()
+        data = self._preprocess(pos, data)
+        if data is not None:
+            self.logger.info(f"Data received: {data.shape}")
+            if self.settings['scanning']['merge_unique_positions']:
+                p = tuple(pos)
+                if p in self._all_spectra_dict.keys():
+                    self._all_spectra_dict[p].append(data)
+                    self._mean_spectra_dict[p] = np.mean(np.array(self._all_spectra_dict[p]), axis=0)
+                    self.logger.debug(f"Pos {pos} has {len(self._all_spectra_dict[p])} spectra.")
+                else:
+                    self._all_spectra_dict[p] = [data]
+                    self._mean_spectra_dict[p] = data
+                self._task_dict[p] = self.reduce(pos, self._mean_spectra_dict[p])
+                self.logger.debug(f'Reduced data: {p}: {self._task_dict[p]}')
+                self.logger.info(f'Updated data: {p}: tasks {self._task_dict[p]} | {len(self._all_spectra_dict[p])} spectra ')
+            else:    
+                self._all_positions.append(pos)
+                self._all_spectra.append(data)
+            return True
+        else:
+            self.logger.debug("No data received.")
+            return False
+
+    def _reduce(self, pos:np.ndarray, data:np.ndarray) -> np.ndarray:
+        """ reduce a single spectrum to tasks"""
+        self.logger.debug(f'Reducing data for pos {pos}...')
+        t0 = time.time()
+        reduced = []
+        for _, d in self.settings["tasks"].items():
+            func = getattr(tasks, d["function"])
+            kwargs = d.get("params", {})
+            if kwargs is None:
+                reduced.append(func(data))
+            else:
+                reduced.append(func(data, **kwargs))
+        reduced = np.asarray(reduced, dtype=float).flatten()
+        if len(reduced) != len(self.task_labels):
+            raise RuntimeError(
+                f"Length mismatch between tasks {len(reduced)}"
+                f"and task labels {len(self.task_labels)}."
+            )
+        self.logger.debug(f"Reduction {pos} | {reduced} | time: {time.time()-t0:.3f} s")
+        return reduced
+
+    def _preprocess(self, pos: np.ndarray, data:np.ndarray) -> np.ndarray:
+        """ preprocess a single spectrum
+        
+        Args:
+            pos (np.ndarray): position
+            data (np.ndarray): spectrum
+        
+        Returns:
+            np.ndarray: preprocessed spectrum
+        """
+        self.logger.debug(f'Preprocessing data for pos {pos}...')
+        t0 = time.time()
+        pp = data.copy()
+        if self.settings["preprocessing"] is not None:
+            for _, d in self.settings["preprocessing"].items():
+                func = getattr(preprocessing, d["function"])
+                kwargs = d.get("params", {})
+                if kwargs is None:
+                    pp = func(pp)
+                else:
+                    pp = func(pp, **kwargs)
+            self.logger.debug(
+                f"Preprocessing {pos} | shape {pp.shape} | mean : {pp.mean():.3f} ± {pp.std():.3f} | time: {time.time()-t0:.3f} s"
+            )        
+        return pp
+    
     def get_taks_normalization_weights(self, update=False) -> NDArray[Any]:
         """Get the weights to normalize the tasks.
 
@@ -146,20 +253,9 @@ class AsyncScanManager:
             self.task_weights = 1 / np.array(self.settings["scanning"]["fixed_normalization"])
             self.logger.debug(f"Fixed Task weights: {self.task_weights}")
         elif self.task_weights is None or update:
-            self.task_weights = 1 / self.val_array.mean(axis=0)
+            self.task_weights = 1 / self.values.mean(axis=0)
             self.logger.debug(f"Updated Task weights: {self.task_weights}")
         return self.task_weights
-
-    @property
-    def filename(self) -> Path:
-        """Get the file stem."""
-        filename: Path = Path(self.remote.filename)
-        folder: Path = filename.parent
-        if not filename.exists():
-            if not folder.exists():
-                raise FileNotFoundError(f"Folder {folder} does not exist.")
-        self.logger.debug(f"Saving settings to {folder}.")
-        return filename
 
     # get data from SGM4
     async def fetch_data(
@@ -213,17 +309,22 @@ class AsyncScanManager:
         while not self._should_stop:
             self.logger.debug("Fetch data looping...")
             t0 = time.time()
-            pos, data = await self.fetch_data()
-            if data is not None:
-                self._raw_data_queue.put_nowait((pos, data))
-                self.logger.info(
-                    f"+ RAW queue     | pos {pos} | shape {data.shape} | "
-                    f"queue size: {self._raw_data_queue.qsize()} | "
-                    f"time: {time.time()-t0:.3f} s"
-                )
+            if self.settings['scanning']['merge_unique_positions']:
+                has_new_data = await self.fetch_and_reduce()
+                if not has_new_data:
+                    await asyncio.sleep(0.2)
             else:
-                self.logger.debug("No data received.")
-                await asyncio.sleep(0.2)
+                pos, data = await self.fetch_data()
+                if data is not None:
+                    self._raw_data_queue.put_nowait((pos, data))
+                    self.logger.info(
+                        f"+ RAW queue     | pos {pos} | shape {data.shape} | "
+                        f"queue size: {self._raw_data_queue.qsize()} | "
+                        f"time: {time.time()-t0:.3f} s"
+                    )
+                else:
+                    self.logger.debug("No data received.")
+                    await asyncio.sleep(0.2)
             await asyncio.sleep(0.1)  # wait a bit before trying again
 
     def reduce(self, pos: NDArray[Any], data: NDArray[Any]) -> NDArray[Any]:
@@ -311,6 +412,7 @@ class AsyncScanManager:
                     n_new += 1
                 except asyncio.QueueEmpty:
                     break
+            
             # self.tell_gp()
             self.logger.debug(
                 f"Updated data with {n_new} new points. Total: {len(self.positions)} last Pos {self.positions[-1]} {self.values[-1]}."
@@ -338,7 +440,7 @@ class AsyncScanManager:
             elif self.settings["scanning"]["normalize_values"] != "never":
                 vals = vals * self.get_taks_normalization_weights(update=update_normalization)
             self.logger.info(f"TELL GP | pos: {pos[-1]} | tasks: {vals[-1]}")
-            self.gp.tell(pos, vals)
+            self.gp.tell(pos, vals, variances=self.errors)
 
     # GP loop
     def init_gp(self) -> None:
@@ -398,7 +500,7 @@ class AsyncScanManager:
 
     def was_already_measured(self, pos:np.ndarray) -> bool:
         """ check if the given position is in the positions list."""
-        return np.any(np.all(np.isclose(self.pos_array, pos), axis=1))
+        return np.any(np.all(np.isclose(self.positions, pos), axis=1))
 
     def train_gp(self) -> None:
         """Train the GP."""
@@ -458,7 +560,7 @@ class AsyncScanManager:
             self.logger.info(
                 f"ASK GP          | Adding {rounded_point} to scan. rounded from {point}"
             )
-            if any([all(rounded_point == prev) for prev in self.pos_array]):
+            if any([all(rounded_point == prev) for prev in self.positions]):
                 self.logger.warning(
                 f"ASK GP          | Point {rounded_point} already evaluated!"
                 )

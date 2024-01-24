@@ -28,7 +28,8 @@ scanning:
   train_every: 0 # 0 for no training
   normalize_values: training # one of init, training, always, fixed or never
   fixed_normalization: [1.0, 1.0] # normalization factors for each task
-
+  merge_unique_positions: true
+  
 preprocessing: 
 # list of preprocessing functions to apply to the data. 
 # Functions are chained in the order they are listed.

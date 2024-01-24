@@ -21,6 +21,43 @@ import matplotlib.pyplot as plt
 
 from gpcam.gp_optimizer import fvGPOptimizer
 
+RELATIVE_INITIAL_POINTS_2D = [
+    [0, 0],
+    [0, 0.5],
+    [0, 1],
+    [0.5, 1],
+    [1, 1],
+    [1, 0.5],
+    [1, 0],
+    [0.5, 0],
+]
+RELATIVE_INITIAL_POINTS_3D = [
+    [0, 0, 0],
+    [0, 0, 0.5],
+    [0, 0, 1],
+    [0, 0.5, 1],
+    [0, 1, 1],
+    [0, 1, 0.5],
+    [0, 1, 0],
+    [0, 0.5, 0],
+    [0.5, 0, 0],
+    [0.5, 0, 0.5],
+    [0.5, 0, 1],
+    [0.5, 0.5, 1],
+    [0.5, 1, 1],
+    [0.5, 1, 0.5],
+    [0.5, 1, 0],
+    [0.5, 0.5, 0],
+    [1, 0, 0],
+    [1, 0, 0.5],
+    [1, 0, 1],
+    [1, 0.5, 1],
+    [1, 1, 1],
+    [1, 1, 0.5],
+    [1, 1, 0],
+    [1, 0.5, 0],
+    [0.5, 0.5, 0.5],
+]
 
 class AsyncScanManager:
     """ AsyncScanManager class.
@@ -50,10 +87,6 @@ class AsyncScanManager:
         
     TODOs:
 
-        - [ ] Add a method to save the data.
-        - [x] Add a method to save the settings.
-        - [ ] Add a method to save the hyperparameters history.
-        - [ ] Check why ask is returning points out of the grid
         - [ ] improve the plotting.
         - [ ] add interactive control of the scan.
         - [ ] move initialization points to the settings file.
@@ -95,46 +128,37 @@ class AsyncScanManager:
             buffer_size=self.settings["TCP"]["buffer_size"],
         )
 
-        # init queues
-        self._all_spectra_dict = {}
-        self._mean_spectra_dict = {}
-        self._task_dict = {}
+        # init data containers
+        self._all_spectra_dict = {} # dict of lists of spectra
+        self._mean_spectra_dict = {} # dict of mean of spectra per position
+        self._task_dict = {} # dict of tasks per position
+
+        self._all_positions: List = [] # list of positions as measured
+        self._all_spectra: List = [] # list of spectra as measured
+        self._all_tasks: List = [] # list of tasks as measured
+
+        self.hyperparameter_history = {} # dict of hyperparameters history
+
+        self.last_spectrum = None # last spectrum as measured
+        self.last_asked_position = None # last position provided by the GP
+        self.task_weights = None  # will be set by get_taks_normalization_weights
+
+        # init flags
+        self._should_stop: bool = False
+        self._ready_for_gp: bool = False
         self._has_new_data: bool = False
-
-
-        self._raw_data_queue: asyncio.Queue = asyncio.Queue()
-        self._reduced_data_queue: asyncio.Queue = asyncio.Queue()
-        self._all_positions: List = []
-        self._all_spectra: List = []
-        self._all_tasks: List = []
+        self._should_replot: bool = False
 
         # init GP
         self.gp = None
-        self._should_stop: bool = False
-        self._ready_for_gp: bool = False
-        # init data
-        # self.positions: List = []
-        # self.unique_positions: List = []
-        # self.values: List = []
-        # self.unique_values: List = []
-        self.hyperparameter_history = {}
-        self.task_weights = None  # for fixed task weights
-        self.last_asked_position = None
-        # init plotting
-        self.replot: bool = False
-        self.last_spectrum = None
 
         # scan initialization points
-        self.relative_inital_points = [ # currently only the border
-            [0, 0],
-            [0, 0.5],
-            [0, 1],
-            [0.5, 1],
-            [1, 1],
-            [1, 0.5],
-            [1, 0],
-            [0.5, 0],
-        ]
+        if self.n_tasks == 2:
+            self.relative_inital_points = RELATIVE_INITIAL_POINTS_2D
+        elif len(self.n_tasks) == 3:
+            self.relative_inital_points = RELATIVE_INITIAL_POINTS_3D
+        else:
+            self.relative_initial_points = None
 
     @property
     def filename(self) -> Path:
@@ -159,6 +183,11 @@ class AsyncScanManager:
         return sum(each)
 
     @property
+    def n_tasks(self) -> int:
+        """Get the number of tasks."""
+        return len(self.task_labels)
+
+    @property
     def positions(self) -> np.ndarray:
         """Get the positions."""
         if self.settings['scanning']['merge_unique_positions']:
@@ -167,7 +196,7 @@ class AsyncScanManager:
             return np.array(self._all_positions, dtype=float)
     
     @property
-    def values(self) -> np.ndarray:
+    def task_values(self) -> np.ndarray:
         """Get the values."""
         if self.settings['scanning']['merge_unique_positions']:
             return np.array(list(self._task_dict.values()))
@@ -183,33 +212,82 @@ class AsyncScanManager:
         else:
             return np.ones((len(self.task_labels),len(self._all_spectra)), dtype=float)
 
-    async def fetch_and_reduce(self) -> None:
+    async def fetch_and_reduce_loop(self) -> None:
         """Fetch data from SGM4 and reduce it."""
+        self.logger.info("Starting fetch data loop.")
+        await asyncio.sleep(1)  # wait a bit before starting
+        while not self._should_stop:
+            self.logger.debug("Fetching data...")
+            pos, data = await self._fetch_data()
+            if data is not None:
+                data = self._preprocess(pos, data)
+                self.logger.info(f"Data received: {data.shape}")
+                t0 = time.time()
+                if self.settings['scanning']['merge_unique_positions']:
+                    p = tuple(pos)
+                    if p in self._all_spectra_dict.keys():
+                        self._all_spectra_dict[p].append(data)
+                        self._mean_spectra_dict[p] = np.mean(np.array(self._all_spectra_dict[p]), axis=0)
+                        self.logger.debug(f"Pos {pos} has {len(self._all_spectra_dict[p])} spectra.")
+                    else:
+                        self._all_spectra_dict[p] = [data]
+                        self._mean_spectra_dict[p] = data
+                    self._task_dict[p] = self._reduce(pos, self._mean_spectra_dict[p])
+                    self.logger.info(f'Updated data: {p}: tasks {self._task_dict[p]} | {len(self._all_spectra_dict[p])} spectra | time: {time.time()-t0:.3f} s')
+                else:    
+                    self._all_positions.append(pos)
+                    self._all_spectra.append(data)
+                    self._all_tasks.append(self._reduce(pos, data))
+                self.last_spectrum = data
+                self._has_new_data = True
+            else:
+                self.logger.debug("No data received.")
+                await asyncio.sleep(0.2)
+
+    # get data from SGM4
+    async def _fetch_data(
+        self,
+    ) -> tuple[str, None] | tuple[NDArray[Any], NDArray[Any]] | None:
+        """Get data from SGM4.
+
+        Returns:
+            tuple[str, None] | tuple[NDArray[Any], NDArray[Any]] | None:
+                - tuple[str, None] if there was an error
+                - tuple[NDArray[Any], NDArray[Any]] if there was no error
+                - None if no data was received
+        """
         self.logger.debug("Fetching data...")
-        pos, data = await self.fetch_data()
-        data = self._preprocess(pos, data)
-        if data is not None:
-            self.logger.info(f"Data received: {data.shape}")
-            if self.settings['scanning']['merge_unique_positions']:
-                p = tuple(pos)
-                if p in self._all_spectra_dict.keys():
-                    self._all_spectra_dict[p].append(data)
-                    self._mean_spectra_dict[p] = np.mean(np.array(self._all_spectra_dict[p]), axis=0)
-                    self.logger.debug(f"Pos {pos} has {len(self._all_spectra_dict[p])} spectra.")
-                else:
-                    self._all_spectra_dict[p] = [data]
-                    self._mean_spectra_dict[p] = data
-                self._task_dict[p] = self._reduce(pos, self._mean_spectra_dict[p])
-                self.logger.debug(f'Reduced data: {p}: {self._task_dict[p]}')
-                self.logger.info(f'Updated data: {p}: tasks {self._task_dict[p]} | {len(self._all_spectra_dict[p])} spectra ')
-            else:    
-                self._all_positions.append(pos)
-                self._all_spectra.append(data)
-            self._has_new_data = True
-            return True
-        else:
-            self.logger.debug("No data received.")
-            return False
+        t0 = time.time()
+        message: str = send_tcp_message(
+            host=self.settings["TCP"]["host"],
+            port=self.settings["TCP"]["port"],
+            msg="MEASURE",
+            buffer_size=self.settings["TCP"]["buffer_size"],
+            logger=self.logger,
+        )
+        msg: list[str] = message.strip("\r\n").split(" ")
+        msg_code: str = msg[0]
+        vals: list[str] = [v for v in msg[1:] if len(v) > 0]
+        self.logger.debug(f"MEASURE answer: {msg_code}: {len(message)/1024:,.1f} kB")
+        match msg_code:
+            case "ERROR":
+                self.logger.error(message)
+                return message, None
+            case "NO_DATA":
+                self.logger.debug(f"No data received: {message}")
+                return message, None
+            case "MEASURE":
+                try:
+                    n_pos = int(vals[0])
+                    pos: NDArray[Any] = np.asarray(vals[1 : n_pos + 1], dtype=float)
+                    data: NDArray[Any] = np.asarray(vals[n_pos + 1 :], dtype=float)
+                    data = data.reshape(self.remote.spectrum_shape)
+                    return pos, data
+                except ValueError as e:
+                    self.logger.critical(f'Failed interpreting received data with shape {data.shape} ')
+            case _:
+                self.logger.warning(f"Unknown message code: {msg_code}")
+                return message, None
 
     def _reduce(self, pos:np.ndarray, data:np.ndarray) -> np.ndarray:
         """ reduce a single spectrum to tasks"""
@@ -268,174 +346,9 @@ class AsyncScanManager:
             self.task_weights = 1 / np.array(self.settings["scanning"]["fixed_normalization"])
             self.logger.debug(f"Fixed Task weights: {self.task_weights}")
         elif self.task_weights is None or update:
-            self.task_weights = 1 / self.values.mean(axis=0)
+            self.task_weights = 1 / self.task_values.mean(axis=0)
             self.logger.debug(f"Updated Task weights: {self.task_weights}")
         return self.task_weights
-
-    # get data from SGM4
-    async def fetch_data(
-        self,
-    ) -> tuple[str, None] | tuple[NDArray[Any], NDArray[Any]] | None:
-        """Get data from SGM4.
-
-        Returns:
-            tuple[str, None] | tuple[NDArray[Any], NDArray[Any]] | None:
-                - tuple[str, None] if there was an error
-                - tuple[NDArray[Any], NDArray[Any]] if there was no error
-                - None if no data was received
-        """
-        self.logger.debug("Fetching data...")
-        t0 = time.time()
-        message: str = send_tcp_message(
-            host=self.settings["TCP"]["host"],
-            port=self.settings["TCP"]["port"],
-            msg="MEASURE",
-            buffer_size=self.settings["TCP"]["buffer_size"],
-            logger=self.logger,
-        )
-        msg: list[str] = message.strip("\r\n").split(" ")
-        msg_code: str = msg[0]
-        vals: list[str] = [v for v in msg[1:] if len(v) > 0]
-        self.logger.debug(f"MEASURE answer: {msg_code}: {len(message)/1024:,.1f} kB")
-        match msg_code:
-            case "ERROR":
-                self.logger.error(message)
-                return message, None
-            case "NO_DATA":
-                self.logger.debug(f"No data received: {message}")
-                return message, None
-            case "MEASURE":
-                try:
-                    n_pos = int(vals[0])
-                    pos: NDArray[Any] = np.asarray(vals[1 : n_pos + 1], dtype=float)
-                    data: NDArray[Any] = np.asarray(vals[n_pos + 1 :], dtype=float)
-                    data = data.reshape(self.remote.spectrum_shape)
-                    return pos, data
-                except ValueError as e:
-                    self.logger.critical(f'Failed interpreting received data with shape {data.shape} ')
-            case _:
-                self.logger.warning(f"Unknown message code: {msg_code}")
-                return message, None
-
-    async def fetch_data_loop(self) -> None:
-        """Loop to fetch data from SGM4 and put it in the raw data queue."""
-        self.logger.info("Starting fetch data loop.")
-        await asyncio.sleep(1)  # wait a bit before starting
-        while not self._should_stop:
-            self.logger.debug("Fetch data looping...")
-            t0 = time.time()
-            if self.settings['scanning']['merge_unique_positions']:
-                has_new_data = await self.fetch_and_reduce()
-                if not has_new_data:
-                    await asyncio.sleep(0.2)
-            else:
-                pos, data = await self.fetch_data()
-                if data is not None:
-                    self._raw_data_queue.put_nowait((pos, data))
-                    self.logger.info(
-                        f"+ RAW queue     | pos {pos} | shape {data.shape} | "
-                        f"queue size: {self._raw_data_queue.qsize()} | "
-                        f"time: {time.time()-t0:.3f} s"
-                    )
-                else:
-                    self.logger.debug("No data received.")
-                    await asyncio.sleep(0.2)
-            await asyncio.sleep(0.1)  # wait a bit before trying again
-
-    def reduce(self, pos: NDArray[Any], data: NDArray[Any]) -> NDArray[Any]:
-        """ preprocess and reduce data.
-
-        Args:
-            data (NDArray[Any]): The data to reduce.
-
-        Returns:
-            NDArray[Any]: The reduced data.
-        """
-        t0 = time.time()
-        pp = data.copy()
-        if self.settings["preprocessing"] is not None:
-            for _, d in self.settings["preprocessing"].items():
-                func = getattr(preprocessing, d["function"])
-                kwargs = d.get("params", {})
-                if kwargs is None:
-                    pp = func(pp)
-                else:
-                    pp = func(pp, **kwargs)
-            self.last_spectrum = pp
-            t1 = time.time()
-            self.logger.debug(
-                f"Preprocessing {pos} | shape {pp.shape} | mean : {pp.mean():.3f} ± {pp.std():.3f} | time: {t1-t0:.3f} s"
-            )
-        else:
-            t1 = time.time()
-
-        # reduce data
-        reduced = []
-        for _, d in self.settings["tasks"].items():
-            func = getattr(tasks, d["function"])
-            kwargs = d.get("params", {})
-            if kwargs is None:
-                reduced.append(func(pp))
-            else:
-                reduced.append(func(pp, **kwargs))
-        reduced = np.asarray(reduced, dtype=float).flatten()
-        if len(reduced) != len(self.task_labels):
-            raise RuntimeError(
-                f"Length mismatch between tasks {len(reduced)}"
-                f"and task labels {len(self.task_labels)}."
-            )
-        self.logger.debug(f"Reduction {pos} | time: {time.time()-t1:.3f} s")
-        return reduced
-
-    # reduce data and update GP
-    async def reduction_loop(self) -> None:
-        """Reduce raw spectra to an array of N tasks and put it in the processed queue"""
-        self.logger.info("Starting reduction loop.")
-        while not self._should_stop:
-            self.logger.debug("Running reduction step...")
-            if self._raw_data_queue.qsize() > 0:
-                pos, data = await self._raw_data_queue.get()
-                # preprocess data
-                t0 = time.time()
-                reduced = self.reduce(pos,data)
-                dt = time.time() - t0
-                self._reduced_data_queue.put_nowait((pos, reduced))
-                self.logger.info(
-                    f"+ REDUCED queue | pos: {pos}, tasks: {reduced} | "
-                    f"queue size: {self._reduced_data_queue.qsize()} | "
-                    f"time: {dt:.3f} s"
-                )
-            else:
-                self.logger.debug("No data in raw data queue.")
-                await asyncio.sleep(0.2)  # wait a bit before trying again
-
-    def update_data_and_positions(self) -> bool:
-        """Update data and positions from the processed queue.
-
-        Return True if new data was added, False if not.
-        """
-        if self._reduced_data_queue.qsize() > 0:
-            self.logger.debug(
-                f"Updating data and positions. Queue size: {self._reduced_data_queue.qsize()}"
-            )
-            n_new = 0
-            while True:
-                try:
-                    pos, data = self._reduced_data_queue.get_nowait()
-                    self.positions.append(pos)
-                    self.values.append(data)
-                    n_new += 1
-                except asyncio.QueueEmpty:
-                    break
-            
-            # self.tell_gp()
-            self.logger.debug(
-                f"Updated data with {n_new} new points. Total: {len(self.positions)} last Pos {self.positions[-1]} {self.values[-1]}."
-            )
-            return True
-        else:
-            self.logger.debug("Reduced queue is empty. No data to update.")
-            return False
 
     def tell_gp(self, update_normalization: bool = False) -> None:
         """Tell the GP about the current available data.
@@ -449,7 +362,7 @@ class AsyncScanManager:
         self.logger.debug("Telling GP about new data.")
         if self.gp is not None:
             pos = np.asarray(self.positions)
-            vals = np.asarray(self.values)
+            vals = np.asarray(self.task_values)
             if self.settings["scanning"]["normalize_values"] == "always":
                 vals = vals * self.get_taks_normalization_weights(update=True)
             elif self.settings["scanning"]["normalize_values"] != "never":
@@ -594,11 +507,11 @@ class AsyncScanManager:
         await asyncio.sleep(1)  # wait a bit before starting
         while not self._ready_for_gp and self.relative_inital_points is not None:
             # has_new_data = self.update_data_and_positions()
-            if len(self.positions) > len(self.relative_inital_points):
+            if self.n_points > len(self.relative_inital_points):
                 self._ready_for_gp = True
             else:
                 self.logger.debug(f"Waiting for data to be ready for GP. {len(self.positions)}/{len(self.relative_inital_points)} ")
-                await asyncio.sleep(0.2)
+                await asyncio.sleep(0.5)
         self.logger.info("Data ready for GP. Starting GP loop.")
         while not self._should_stop:
             self.logger.debug("GP looping...")
@@ -624,7 +537,7 @@ class AsyncScanManager:
                     success = self.ask_gp()
                     if not success:
                         break
-                    self.replot = True
+                    self._should_replot = True
             else:
                 self.logger.debug("No data to update.")
                 await asyncio.sleep(0.2)
@@ -643,14 +556,14 @@ class AsyncScanManager:
         self.fig = None
         aqf = None
         while not self._should_stop:
-            if self.replot:
-                self.replot = False
+            if self._should_replot:
+                self._should_replot = False
                 self.logger.debug("Plotting...")
                 fig, aqf = plot.plot_acqui_f(
                     gp=self.gp,
                     fig=self.fig,
                     pos=np.asarray(self.positions),
-                    val=np.asarray(self.values),
+                    val=np.asarray(self.task_values),
                     old_aqf=aqf,
                     last_spectrum=self.last_spectrum,
                     settings=self.settings,
@@ -688,8 +601,7 @@ class AsyncScanManager:
         self.logger.info("Starting all loops.")
         tasks = (
                 self.killer_loop(),
-                self.fetch_data_loop(),
-                # self.reduction_loop(),
+                self.fetch_and_reduce_loop(),
                 self.gp_loop(),
                 self.plotting_loop(),
             )

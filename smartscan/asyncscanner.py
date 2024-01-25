@@ -785,13 +785,14 @@ class AsyncScanManager:
         self.logger.info(
             f"Starting killer loop. Will kill process after {duration} seconds."
         )
+        start_time = time.time()
         if duration is None:
             duration = self.settings["scanning"]["duration"]
         if duration is not None:
             time_left = duration
             while not self._should_stop:
                 time_left -= 1
-                if time_left <= 0:
+                if time_left <= 0 or time.time() > start_time + duration:
                     break
                 await asyncio.sleep(1)
             self.logger.info(

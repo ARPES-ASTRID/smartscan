@@ -163,7 +163,7 @@ def manhattan_avoid_repetition(
     ) -> float:
     """Avoid repeating the same point twice and compute the movement cost between two points"""
     logger = logging.getLogger('manhattan_avoid_repetition')
-    logger.debug(f"cost func params:")
+    logger.debug("cost func params:")
     for k,v in cost_func_params.items():
         if isinstance(v,np.ndarray):
             logger.debug(f'\t{k}: {v.shape}')

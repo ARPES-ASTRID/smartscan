@@ -10,6 +10,7 @@ from copy import deepcopy
 
 import numpy as np
 import yaml
+from smartscan.gp import cost_functions
 
 from smartscan.utils import ColoredFormatter
 from smartscan import AsyncScanManager
@@ -21,6 +22,8 @@ def batches(settings,logger):
     aqf_batch(settings,logger)
 
 def aqf_batch(settings,logger) -> None:
+    i = 1
+
     tasks = {
         'laplace_filter': {            
             'function': 'laplace_filter', 
@@ -41,10 +44,37 @@ def aqf_batch(settings,logger) -> None:
         },
     }
     rois = [[145,190],[10,140]], [[45,190],[10,140]]
-    aqf_values = [0.1,0.5,1]
-    i = 1
+    
+    # ~~~batch~~~~ 
+    cost_values = [0.01, 0.1, 1, 10, 0.05, 0.5, 5]
+
+    settings['acquisition_function']['params']['a'] = 0.5
+    settings['scanning']['n_points'] = 500
+    settings['tasks'] = {
+                "mean": {
+                    "function": "mean",
+                    "params": {
+                        "roi": [[145,190],[10,140]]
+                    }
+                },
+                'curvature': tasks['curvature']
+            }
+    for val in cost_values:
+        logger.info(f"Starting batch run #{i}")
+        settings['cost_function']['params']['weight'] = val
+        print(f"cost: {settings['cost_function']['params']['weight']}")
+        run_asyncio(settings)
+        logger.info(f'Finished batch run #{i}')
+        logger.info(f'Waiting for 30 seconds')
+        time.sleep(30)
+        i += 1
+    
+
     # ~~~batch~~~~
-    for task in ["curvature","laplace_filter"]:
+    aqf_values = [0.1,0.5,1]
+    settings['cost_function']['params']['weight'] = 0.01
+    settings['scanning']['n_points'] = 500
+    for task in ["laplace_filter"]:
         for roi in rois:
             settings['tasks'] = {
                 "mean": {
@@ -68,6 +98,7 @@ def aqf_batch(settings,logger) -> None:
                 time.sleep(30)
                 i += 1
     
+
 
 
 

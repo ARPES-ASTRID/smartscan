@@ -1,4 +1,5 @@
 from typing import List, Any
+from xml.sax.handler import property_lexical_handler
 from numpy.typing import NDArray
 from pathlib import Path
 import logging
@@ -20,6 +21,249 @@ import matplotlib.pyplot as plt
 
 from gpcam.gp_optimizer import fvGPOptimizer
 
+RELATIVE_INITIAL_POINTS_2D = {
+    "border_8":[
+        [0, 0],
+        [0, 0.5],
+        [0, 1],
+        [0.5, 1],
+        [1, 1],
+        [1, 0.5],
+        [1, 0],
+        [0.5, 0],
+    ],
+    "border_16":[
+        [0, 0],
+        [0, 0.25],
+        [0, 0.5],
+        [0, 0.75],
+        [0, 1],
+        [0.25, 1],
+        [0.5, 1],
+        [0.75, 1],
+        [1, 1],
+        [1, 0.75],
+        [1, 0.5],
+        [1, 0.25],
+        [1, 0],
+        [0.75, 0],
+        [0.5, 0],
+        [0.25, 0],
+    ],
+    "grid_9":[
+        [0, 0],
+        [0, 0.5],
+        [0, 1],
+        [0.5, 1],
+        [1, 1],
+        [1, 0.5],
+        [1, 0],
+        [0.5, 0],
+        [0.5, 0.5],
+    ],
+    "grid_25":[
+        [0, 0],
+        [0, 0.25],
+        [0, 0.5],
+        [0, 0.75],
+        [0, 1],
+        [0.25, 1],
+        [0.5, 1],
+        [0.75, 1],
+        [1, 1],
+        [1, 0.75],
+        [1, 0.5],
+        [1, 0.25],
+        [1, 0],
+        [0.75, 0],
+        [0.5, 0],
+        [0.25, 0],
+        [0.5, 0.5],
+        [0.5, 0.25],
+        [0.5, 0.75],
+        [0.25, 0.5],
+        [0.75, 0.5],
+        [0.25, 0.25],
+        [0.25, 0.75],
+        [0.75, 0.25],
+        [0.75, 0.75],
+    ],
+    "hexgrid_19":[
+        [0, 0],
+        [0, 0.5],
+        [0, 1],
+        [0.25, 0.75],
+        [0.25, 0.25],
+        [0.5, 0],
+        [0.5, 0.5],
+        [0.5, 1],
+        [0.75, 0.75],
+        [0.75, 0.25],
+        [1, 0],
+        [1, 0.5],
+        [1, 1],
+        [0.25, 0.5],
+        [0.5, 0.25],
+        [0.5, 0.75],
+        [0.75, 0.5],
+        [0.5, 0.5],
+        [0.5, 0.5],
+    ],
+}
+
+RELATIVE_INITIAL_POINTS_3D = {
+    "border_25": [
+        [0, 0, 0],
+        [0, 0, 0.5],
+        [0, 0, 1],
+        [0, 0.5, 1],
+        [0, 1, 1],
+        [0, 1, 0.5],
+        [0, 1, 0],
+        [0, 0.5, 0],
+        [0.5, 0, 0],
+        [0.5, 0, 0.5],
+        [0.5, 0, 1],
+        [0.5, 0.5, 1],
+        [0.5, 1, 1],
+        [0.5, 1, 0.5],
+        [0.5, 1, 0],
+        [0.5, 0.5, 0],
+        [1, 0, 0],
+        [1, 0, 0.5],
+        [1, 0, 1],
+        [1, 0.5, 1],
+        [1, 1, 1],
+        [1, 1, 0.5],
+        [1, 1, 0],
+        [1, 0.5, 0],
+        [0.5, 0.5, 0.5],
+    ],
+    "border_64": [
+        [0, 0, 0],
+        [0, 0, 0.25],
+        [0, 0, 0.5],
+        [0, 0, 0.75],
+        [0, 0, 1],
+        [0, 0.25, 1],
+        [0, 0.5, 1],
+        [0, 0.75, 1],
+        [0, 1, 1],
+        [0, 1, 0.75],
+        [0, 1, 0.5],
+        [0, 1, 0.25],
+        [0, 1, 0],
+        [0, 0.75, 0],
+        [0, 0.5, 0],
+        [0, 0.25, 0],
+        [0.25, 0, 0],
+        [0.25, 0, 0.25],
+        [0.25, 0, 0.5],
+        [0.25, 0, 0.75],
+        [0.25, 0, 1],
+        [0.25, 0.25, 1],
+        [0.25, 0.5, 1],
+        [0.25, 0.75, 1],
+        [0.25, 1, 1],
+        [0.25, 1, 0.75],
+        [0.25, 1, 0.5],
+        [0.25, 1, 0.25],
+        [0.25, 1, 0],
+        [0.25, 0.75, 0],
+        [0.25, 0.5, 0],
+        [0.25, 0.25, 0],
+        [0.5, 0, 0],
+        [0.5, 0, 0.25],
+        [0.5, 0, 0.5],
+        [0.5, 0, 0.75],
+        [0.5, 0, 1],
+        [0.5, 0.25, 1],
+        [0.5, 0.5, 1],
+        [0.5, 0.75, 1],
+    ],
+    "grid_27": [
+        [0, 0, 0],
+        [0, 0, 0.5],
+        [0, 0, 1],
+        [0, 0.5, 1],
+        [0, 1, 1],
+        [0, 1, 0.5],
+        [0, 1, 0],
+        [0, 0.5, 0],
+        [0.5, 0, 0],
+        [0.5, 0, 0.5],
+        [0.5, 0, 1],
+        [0.5, 0.5, 1],
+        [0.5, 1, 1],
+        [0.5, 1, 0.5],
+        [0.5, 1, 0],
+        [0.5, 0.5, 0],
+        [1, 0, 0],
+        [1, 0, 0.5],
+        [1, 0, 1],
+        [1, 0.5, 1],
+        [1, 1, 1],
+        [1, 1, 0.5],
+        [1, 1, 0],
+        [1, 0.5, 0],
+        [0.5, 0.5, 0.5],
+        [0.5, 0.5, 0.25],
+        [0.5, 0.5, 0.75],
+    ],
+    "grid_125": [
+        [0, 0, 0],
+        [0, 0, 0.25],
+        [0, 0, 0.5],
+        [0, 0, 0.75],
+        [0, 0, 1],
+        [0, 0.25, 1],
+        [0, 0.5, 1],
+        [0, 0.75, 1],
+        [0, 1, 1],
+        [0, 1, 0.75],
+        [0, 1, 0.5],
+        [0, 1, 0.25],
+        [0, 1, 0],
+        [0, 0.75, 0],
+        [0, 0.5, 0],
+        [0, 0.25, 0],
+        [0.25, 0, 0],
+        [0.25, 0, 0.25],
+        [0.25, 0, 0.5],
+        [0.25, 0, 0.75],
+        [0.25, 0, 1],
+        [0.25, 0.25, 1],
+        [0.25, 0.5, 1],
+        [0.25, 0.75, 1],
+        [0.25, 1, 1],
+        [0.25, 1, 0.75],
+        [0.25, 1, 0.5],
+        [0.25, 1, 0.25],
+        [0.25, 1, 0],
+        [0.25, 0.75, 0],
+        [0.25, 0.5, 0],
+        [0.25, 0.25, 0],
+        [0.5, 0, 0],
+        [0.5, 0, 0.25],
+        [0.5, 0, 0.5],
+        [0.5, 0, 0.75],
+        [0.5, 0, 1],
+        [0.5, 0.25, 1],
+        [0.5, 0.5, 1],
+        [0.5, 0.75, 1],
+        [0.5, 1, 1],
+        [0.5, 1, 0.75],
+        [0.5, 1, 0.5],
+        [0.5, 1, 0.25],
+        [0.5, 1, 0],
+        [0.5, 0.75, 0],
+        [0.5, 0.5, 0],
+        [0.5, 0.25, 0],
+        [0.5, 0.5, 0.5],
+        [0.5, 0.5, 0.25],
+        [0.5, 0.5, 0.75],
+    ],      
+}
 
 class AsyncScanManager:
     """ AsyncScanManager class.
@@ -49,10 +293,6 @@ class AsyncScanManager:
         
     TODOs:
 
-        - [ ] Add a method to save the data.
-        - [x] Add a method to save the settings.
-        - [ ] Add a method to save the hyperparameters history.
-        - [ ] Check why ask is returning points out of the grid
         - [ ] improve the plotting.
         - [ ] add interactive control of the scan.
         - [ ] move initialization points to the settings file.
@@ -94,61 +334,37 @@ class AsyncScanManager:
             buffer_size=self.settings["TCP"]["buffer_size"],
         )
 
-        # init queues
-        self._raw_data_queue: asyncio.Queue = asyncio.Queue()
-        self._reduced_data_queue: asyncio.Queue = asyncio.Queue()
+        # init data containers
+        self._all_spectra_dict = {} # dict of lists of spectra
+        self._mean_spectra_dict = {} # dict of mean of spectra per position
+        self._task_dict = {} # dict of tasks per position
+
+        self._all_positions: List = [] # list of positions as measured
+        self._all_spectra: List = [] # list of spectra as measured
+        self._all_tasks: List = [] # list of tasks as measured
+
+        self.hyperparameter_history = {} # dict of hyperparameters history
+
+        self.last_spectrum = None # last spectrum as measured
+        self.last_asked_position = None # last position provided by the GP
+        self.task_weights = None  # will be set by get_taks_normalization_weights
+
+        # init flags
+        self._should_stop: bool = False
+        self._ready_for_gp: bool = False
+        self._has_new_data: bool = False
+        self._should_replot: bool = False
 
         # init GP
         self.gp = None
-        self._should_stop: bool = False
-        self._ready_for_gp: bool = False
-
-        # init data
-        self.positions: List = []
-        self.unique_positions: List = []
-        self.values: List = []
-        self.hyperparameter_history = {}
-        self.task_weights = None  # for fixed task weights
-        self.last_asked_position = None
-        # init plotting
-        self.replot: bool = False
-        self.last_spectrum = None
 
         # scan initialization points
-        self.relative_inital_points = [ # currently only the border
-            [0, 0],
-            [0, 0.5],
-            [0, 1],
-            [0.5, 1],
-            [1, 1],
-            [1, 0.5],
-            [1, 0],
-            [0.5, 0],
-        ]
-
-    @property
-    def val_array(self) -> NDArray[Any]:
-        """Get the values as an array."""
-        return np.asarray(self.values, dtype=float)
-
-    @property
-    def pos_array(self) -> NDArray[Any]:
-        """Get the positions as an array."""
-        return np.asarray(self.positions, dtype=float)
-
-    def get_taks_normalization_weights(self, update=False) -> NDArray[Any]:
-        """Get the weights to normalize the tasks.
-
-        Returns:
-            NDArray[float]: An array with the weights.
-        """
-        if self.settings["scanning"]["normalize_values"] == "fixed":
-            self.task_weights = 1 / np.array(self.settings["scanning"]["fixed_normalization"])
-            self.logger.debug(f"Fixed Task weights: {self.task_weights}")
-        elif self.task_weights is None or update:
-            self.task_weights = 1 / self.val_array.mean(axis=0)
-            self.logger.debug(f"Updated Task weights: {self.task_weights}")
-        return self.task_weights
+        if self.n_tasks == 2:
+            self.relative_inital_points = RELATIVE_INITIAL_POINTS_2D[self.settings['scanning']['initial_points_2D']]
+        elif len(self.n_tasks) == 3:
+            self.relative_inital_points = RELATIVE_INITIAL_POINTS_3D[self.settings['scanning']['initial_points_3D']]
+        else:
+            self.relative_initial_points = None
 
     @property
     def filename(self) -> Path:
@@ -161,8 +377,81 @@ class AsyncScanManager:
         self.logger.debug(f"Saving settings to {folder}.")
         return filename
 
+    @property
+    def n_points(self) -> int:
+        """Get the number of points."""
+        return len(self.positions)
+    
+    @property
+    def n_spectra(self) -> int:
+        """Get the number of spectra."""
+        each = [len(d) for d in self._all_spectra_dict.values()]
+        return sum(each)
+
+    @property
+    def n_tasks(self) -> int:
+        """Get the number of tasks."""
+        return len(self.task_labels)
+
+    @property
+    def positions(self) -> np.ndarray:
+        """Get the positions."""
+        if self.settings['scanning']['merge_unique_positions']:
+            return np.array([np.array(p) for p in self._mean_spectra_dict.keys()])
+        else:
+            return np.array(self._all_positions, dtype=float)
+    
+    @property
+    def task_values(self) -> np.ndarray:
+        """Get the values."""
+        if self.settings['scanning']['merge_unique_positions']:
+            return np.array(list(self._task_dict.values()))
+        else:
+            return np.array(self._all_tasks, dtype=float)
+        
+    @property
+    def errors(self) -> np.ndarray:
+        """Get the errors."""
+        if self.settings['scanning']['merge_unique_positions']:
+            base_error = self.settings['scanning']['base_error']
+            return np.array([[base_error/np.sqrt(len(d))]*len(self.task_labels) for d in self._all_spectra_dict.values()], dtype=float)
+        else:
+            return np.ones((len(self.task_labels),len(self._all_spectra)), dtype=float)
+
+    async def fetch_and_reduce_loop(self) -> None:
+        """Fetch data from SGM4 and reduce it."""
+        self.logger.info("Starting fetch data loop.")
+        await asyncio.sleep(1)  # wait a bit before starting
+        while not self._should_stop:
+            self.logger.debug("Fetching data...")
+            pos, data = await self._fetch_data()
+            if data is not None:
+                data = self._preprocess(pos, data)
+                self.logger.info(f"Data received: {data.shape}")
+                t0 = time.time()
+                if self.settings['scanning']['merge_unique_positions']:
+                    p = tuple(pos)
+                    if p in self._all_spectra_dict.keys():
+                        self._all_spectra_dict[p].append(data)
+                        self._mean_spectra_dict[p] = np.mean(np.array(self._all_spectra_dict[p]), axis=0)
+                        self.logger.debug(f"Pos {pos} has {len(self._all_spectra_dict[p])} spectra.")
+                    else:
+                        self._all_spectra_dict[p] = [data]
+                        self._mean_spectra_dict[p] = data
+                    self._task_dict[p] = self._reduce(pos, self._mean_spectra_dict[p])
+                    self.logger.info(f'Updated data: {p}: tasks {self._task_dict[p]} | {len(self._all_spectra_dict[p])} spectra | time: {time.time()-t0:.3f} s')
+                else:    
+                    self._all_positions.append(pos)
+                    self._all_spectra.append(data)
+                    self._all_tasks.append(self._reduce(pos, data))
+                self.last_spectrum = data
+                self._has_new_data = True
+            else:
+                self.logger.debug("No data received.")
+                await asyncio.sleep(0.2)
+
     # get data from SGM4
-    async def fetch_data(
+    async def _fetch_data(
         self,
     ) -> tuple[str, None] | tuple[NDArray[Any], NDArray[Any]] | None:
         """Get data from SGM4.
@@ -206,35 +495,38 @@ class AsyncScanManager:
                 self.logger.warning(f"Unknown message code: {msg_code}")
                 return message, None
 
-    async def fetch_data_loop(self) -> None:
-        """Loop to fetch data from SGM4 and put it in the raw data queue."""
-        self.logger.info("Starting fetch data loop.")
-        await asyncio.sleep(1)  # wait a bit before starting
-        while not self._should_stop:
-            self.logger.debug("Fetch data looping...")
-            t0 = time.time()
-            pos, data = await self.fetch_data()
-            if data is not None:
-                self._raw_data_queue.put_nowait((pos, data))
-                self.logger.info(
-                    f"+ RAW queue     | pos {pos} | shape {data.shape} | "
-                    f"queue size: {self._raw_data_queue.qsize()} | "
-                    f"time: {time.time()-t0:.3f} s"
-                )
+    def _reduce(self, pos:np.ndarray, data:np.ndarray) -> np.ndarray:
+        """ reduce a single spectrum to tasks"""
+        self.logger.debug(f'Reducing data for pos {pos}...')
+        t0 = time.time()
+        reduced = []
+        for _, d in self.settings["tasks"].items():
+            func = getattr(tasks, d["function"])
+            kwargs = d.get("params", {})
+            if kwargs is None:
+                reduced.append(func(data))
             else:
-                self.logger.debug("No data received.")
-                await asyncio.sleep(0.2)
-            await asyncio.sleep(0.1)  # wait a bit before trying again
+                reduced.append(func(data, **kwargs))
+        reduced = np.asarray(reduced, dtype=float).flatten()
+        if len(reduced) != len(self.task_labels):
+            raise RuntimeError(
+                f"Length mismatch between tasks {len(reduced)}"
+                f"and task labels {len(self.task_labels)}."
+            )
+        self.logger.debug(f"Reduction {pos} | {reduced} | time: {time.time()-t0:.3f} s")
+        return reduced
 
-    def reduce(self, pos: NDArray[Any], data: NDArray[Any]) -> NDArray[Any]:
-        """ preprocess and reduce data.
-
+    def _preprocess(self, pos: np.ndarray, data:np.ndarray) -> np.ndarray:
+        """ preprocess a single spectrum
+        
         Args:
-            data (NDArray[Any]): The data to reduce.
-
+            pos (np.ndarray): position
+            data (np.ndarray): spectrum
+        
         Returns:
-            NDArray[Any]: The reduced data.
+            np.ndarray: preprocessed spectrum
         """
+        self.logger.debug(f'Preprocessing data for pos {pos}...')
         t0 = time.time()
         pp = data.copy()
         if self.settings["preprocessing"] is not None:
@@ -245,80 +537,24 @@ class AsyncScanManager:
                     pp = func(pp)
                 else:
                     pp = func(pp, **kwargs)
-            self.last_spectrum = pp
-            t1 = time.time()
             self.logger.debug(
-                f"Preprocessing {pos} | shape {pp.shape} | mean : {pp.mean():.3f} ± {pp.std():.3f} | time: {t1-t0:.3f} s"
-            )
-        else:
-            t1 = time.time()
+                f"Preprocessing {pos} | shape {pp.shape} | mean : {pp.mean():.3f} ± {pp.std():.3f} | time: {time.time()-t0:.3f} s"
+            )        
+        return pp
+    
+    def get_taks_normalization_weights(self, update=False) -> NDArray[Any]:
+        """Get the weights to normalize the tasks.
 
-        # reduce data
-        reduced = []
-        for _, d in self.settings["tasks"].items():
-            func = getattr(tasks, d["function"])
-            kwargs = d.get("params", {})
-            if kwargs is None:
-                reduced.append(func(pp))
-            else:
-                reduced.append(func(pp, **kwargs))
-        reduced = np.asarray(reduced, dtype=float).flatten()
-        if len(reduced) != len(self.task_labels):
-            raise RuntimeError(
-                f"Length mismatch between tasks {len(reduced)}"
-                f"and task labels {len(self.task_labels)}."
-            )
-        self.logger.debug(f"Reduction {pos} | time: {time.time()-t1:.3f} s")
-        return reduced
-
-    # reduce data and update GP
-    async def reduction_loop(self) -> None:
-        """Reduce raw spectra to an array of N tasks and put it in the processed queue"""
-        self.logger.info("Starting reduction loop.")
-        while not self._should_stop:
-            self.logger.debug("Running reduction step...")
-            if self._raw_data_queue.qsize() > 0:
-                pos, data = await self._raw_data_queue.get()
-                # preprocess data
-                t0 = time.time()
-                reduced = self.reduce(pos,data)
-                dt = time.time() - t0
-                self._reduced_data_queue.put_nowait((pos, reduced))
-                self.logger.info(
-                    f"+ REDUCED queue | pos: {pos}, tasks: {reduced} | "
-                    f"queue size: {self._reduced_data_queue.qsize()} | "
-                    f"time: {dt:.3f} s"
-                )
-            else:
-                self.logger.debug("No data in raw data queue.")
-                await asyncio.sleep(0.2)  # wait a bit before trying again
-
-    def update_data_and_positions(self) -> bool:
-        """Update data and positions from the processed queue.
-
-        Return True if new data was added, False if not.
+        Returns:
+            NDArray[float]: An array with the weights.
         """
-        if self._reduced_data_queue.qsize() > 0:
-            self.logger.debug(
-                f"Updating data and positions. Queue size: {self._reduced_data_queue.qsize()}"
-            )
-            n_new = 0
-            while True:
-                try:
-                    pos, data = self._reduced_data_queue.get_nowait()
-                    self.positions.append(pos)
-                    self.values.append(data)
-                    n_new += 1
-                except asyncio.QueueEmpty:
-                    break
-            # self.tell_gp()
-            self.logger.debug(
-                f"Updated data with {n_new} new points. Total: {len(self.positions)} last Pos {self.positions[-1]} {self.values[-1]}."
-            )
-            return True
-        else:
-            self.logger.debug("Reduced queue is empty. No data to update.")
-            return False
+        if self.settings["scanning"]["normalize_values"] == "fixed":
+            self.task_weights = 1 / np.array(self.settings["scanning"]["fixed_normalization"])
+            self.logger.debug(f"Fixed Task weights: {self.task_weights}")
+        elif self.task_weights is None or update:
+            self.task_weights = 1 / self.task_values.mean(axis=0)
+            self.logger.debug(f"Updated Task weights: {self.task_weights}")
+        return self.task_weights
 
     def tell_gp(self, update_normalization: bool = False) -> None:
         """Tell the GP about the current available data.
@@ -332,13 +568,14 @@ class AsyncScanManager:
         self.logger.debug("Telling GP about new data.")
         if self.gp is not None:
             pos = np.asarray(self.positions)
-            vals = np.asarray(self.values)
+            vals = np.asarray(self.task_values)
             if self.settings["scanning"]["normalize_values"] == "always":
                 vals = vals * self.get_taks_normalization_weights(update=True)
             elif self.settings["scanning"]["normalize_values"] != "never":
                 vals = vals * self.get_taks_normalization_weights(update=update_normalization)
             self.logger.info(f"TELL GP | pos: {pos[-1]} | tasks: {vals[-1]}")
-            self.gp.tell(pos, vals)
+            self.gp.tell(pos, vals, variances=self.errors)
+            self._has_new_data = False
 
     # GP loop
     def init_gp(self) -> None:
@@ -398,7 +635,7 @@ class AsyncScanManager:
 
     def was_already_measured(self, pos:np.ndarray) -> bool:
         """ check if the given position is in the positions list."""
-        return np.any(np.all(np.isclose(self.pos_array, pos), axis=1))
+        return np.any(np.all(np.isclose(self.positions, pos), axis=1))
 
     def train_gp(self) -> None:
         """Train the GP."""
@@ -458,7 +695,7 @@ class AsyncScanManager:
             self.logger.info(
                 f"ASK GP          | Adding {rounded_point} to scan. rounded from {point}"
             )
-            if any([all(rounded_point == prev) for prev in self.pos_array]):
+            if any([all(rounded_point == prev) for prev in self.positions]):
                 self.logger.warning(
                 f"ASK GP          | Point {rounded_point} already evaluated!"
                 )
@@ -475,12 +712,12 @@ class AsyncScanManager:
         self.logger.info("Starting GP loop.")
         await asyncio.sleep(1)  # wait a bit before starting
         while not self._ready_for_gp and self.relative_inital_points is not None:
-            has_new_data = self.update_data_and_positions()
-            if len(self.positions) > len(self.relative_inital_points):
+            # has_new_data = self.update_data_and_positions()
+            if self.n_points > len(self.relative_inital_points):
                 self._ready_for_gp = True
             else:
                 self.logger.debug(f"Waiting for data to be ready for GP. {len(self.positions)}/{len(self.relative_inital_points)} ")
-                await asyncio.sleep(0.2)
+                await asyncio.sleep(0.5)
         self.logger.info("Data ready for GP. Starting GP loop.")
         while not self._should_stop:
             self.logger.debug("GP looping...")
@@ -491,11 +728,11 @@ class AsyncScanManager:
                 )
                 self._should_stop = True
                 break
-            has_new_data = self.update_data_and_positions()
-            if has_new_data:
+            # has_new_data = self.update_data_and_positions()
+            if self._has_new_data:
                 self.iter_counter += 1
                 self.logger.info(
-                    f"GP iter: {self.iter_counter:3.0f}/{self.settings['scanning']['max_points']:4.0f} | {len(self.positions)} samples"
+                    f"GP iter: {self.iter_counter:3.0f}/{self.settings['scanning']['max_points']:4.0f} | {self.n_points} samples | {self.n_spectra} spectra"
                 )
                 if self.gp is None:
                     self.init_gp()  # initialize GP at first iteration
@@ -506,7 +743,7 @@ class AsyncScanManager:
                     success = self.ask_gp()
                     if not success:
                         break
-                    self.replot = True
+                    self._should_replot = True
             else:
                 self.logger.debug("No data to update.")
                 await asyncio.sleep(0.2)
@@ -525,14 +762,14 @@ class AsyncScanManager:
         self.fig = None
         aqf = None
         while not self._should_stop:
-            if self.replot:
-                self.replot = False
+            if self._should_replot:
+                self._should_replot = False
                 self.logger.debug("Plotting...")
                 fig, aqf = plot.plot_acqui_f(
                     gp=self.gp,
                     fig=self.fig,
                     pos=np.asarray(self.positions),
-                    val=np.asarray(self.values),
+                    val=np.asarray(self.task_values),
                     old_aqf=aqf,
                     last_spectrum=self.last_spectrum,
                     settings=self.settings,
@@ -548,13 +785,18 @@ class AsyncScanManager:
         self.logger.info(
             f"Starting killer loop. Will kill process after {duration} seconds."
         )
+        start_time = time.time()
+
         if duration is None:
             duration = self.settings["scanning"]["duration"]
+            end_time = start_time + duration
+            end_time_str = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(end_time))
+            self.logger.warning(f'Scan will end in {duration} seconds. At {end_time_str}')
         if duration is not None:
             time_left = duration
             while not self._should_stop:
                 time_left -= 1
-                if time_left <= 0:
+                if time_left <= 0 or time.time() > start_time + duration:
                     break
                 await asyncio.sleep(1)
             self.logger.info(
@@ -570,8 +812,7 @@ class AsyncScanManager:
         self.logger.info("Starting all loops.")
         tasks = (
                 self.killer_loop(),
-                self.fetch_data_loop(),
-                self.reduction_loop(),
+                self.fetch_and_reduce_loop(),
                 self.gp_loop(),
                 self.plotting_loop(),
             )
@@ -729,7 +970,6 @@ class AsyncScanManager:
             self.finalize()
         except Exception as e:
             self.logger.warn(f"{type(e).__name__} while deleting asyncscanner instance: {e}")
-
 
 if __name__ == "__main__":
     pass

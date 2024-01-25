@@ -1,4 +1,5 @@
 from typing import Any, Dict, Callable, Tuple, Union, List, Sequence
+import multiprocessing as mp
 import time
 import itertools
 import asyncio
@@ -28,7 +29,7 @@ class VirtualSGM4(TCPServer):
             limits: List[Tuple[float]] = None,
             step_size: Sequence[float] = None,
             buffer_size:int = 1024*1024*8,
-            dwell_time: float = 1,
+            dwell_time: float = None,
             simulate_times: bool = False,
             save_to_file: bool = True,
             logger=None,
@@ -36,7 +37,8 @@ class VirtualSGM4(TCPServer):
         super().__init__(ip, port)
         self.logger = logger or logging.getLogger(f"{__name__}.VirtualSGM4")
         self.logger.info('init VirtualSGM4 object')
-        self.queue = []
+        self.output_queue = mp.Queue()
+        self.input_queue = mp.Queue()
         self.status = 'IDLE' # TODO: implement status
         if source_file is not None:
             self.init_scan_from_file(source_file)
@@ -45,6 +47,7 @@ class VirtualSGM4(TCPServer):
         self.file = None
         self.simulate_times = simulate_times
         self.save_to_file = save_to_file
+        self.dwell_time = dwell_time
 
     def init_scan(
             self,
@@ -114,7 +117,7 @@ class VirtualSGM4(TCPServer):
             self.axes = f.axes
             self.map_shape = f.map_shape
             self.signal_shape = f.file['Entry/Data/TransformedData'].shape[1:]
-            self.dwell_time = f.dwell_time
+            self.dwell_time = self.dwell_time or f.dwell_time
             self.starts = f.starts
             self.stops = f.stops
             self.steps = f.steps
@@ -123,7 +126,7 @@ class VirtualSGM4(TCPServer):
             self.positions = f.positions
             self.limits = f.limits
             self.current_pos = [c[l//2] for c, l in zip(self.coords.values(), self.map_shape)]
-        self.queue.append(self.current_pos)
+        self.input_queue.put(self.current_pos)
 
     def nearest_position_on_grid(self, position: Sequence[float]) -> Tuple[int]:
         """Find nearest position in the grid.
@@ -222,13 +225,15 @@ class VirtualSGM4(TCPServer):
         """
         return self.limits[axis*self.ndim] <= target <= self.limits[axis*self.ndim+1]
 
-    def measure(self, changed:Sequence[bool]) -> float:
+    def acquire_data(self, changed:Sequence[bool]) -> float:
         """ Fake measuring the current position."""
 
         self.logger.debug(f'Measuring position {self.current_pos}, changed {changed}')
         pos, data = self.read_data(self.current_pos)
         if self.save_to_file:
             self.write_data(pos, data)
+        self.output_queue.put_nowait((pos, data))
+        self.logger.info(f'Acquired data at position {pos} | output queue size: {self.output_queue.qsize()}')
         return pos, data
 
     def write_data(self, position: Tuple[float], data: np.ndarray) -> None:
@@ -277,19 +282,19 @@ class VirtualSGM4(TCPServer):
              
 
         while True:
-            if len(self.queue) == 0:
+            if self.input_queue.empty():
                 if not self.wait_at_queue_empty:
                     self.logger.info('queue is empty, stopping scan')
                     break
                 # self.log('queue is empty, waiting is {}...'.format(self.wait_at_queue_empty), end='\r')
                 # await asyncio.sleep(self.dwell_time)
                 changed = [False] * self.ndim
-            else:
-                next_pos = self.queue.pop(0)
+            else: # move
+                next_pos = self.input_queue.get_nowait()
                 # manhattan distance:
                 distance = sum([abs(next_pos[i] - self.current_pos[i]) for i in range(self.ndim)])
                 travel_time = distance / self.MOTOR_SPEED
-                self.logger.info(f'Moving to {next_pos}. takes {travel_time:.2f} seconds')
+                self.logger.info(f'Moving to {next_pos} | {travel_time:.2f} seconds | {distance:.2f} um | input queue size: {self.input_queue.qsize()}')
                 if self.simulate_times:
                     await asyncio.sleep(travel_time)
                 else:
@@ -297,8 +302,14 @@ class VirtualSGM4(TCPServer):
                 changed = [new != old for new, old in zip(next_pos, self.current_pos)]
                 self.current_pos = next_pos
                 # await self.go_to_position(next_pos)
-            _ = self.measure(changed)
+            if self.output_queue.qsize() < 100:
+                _ = self.acquire_data(changed)
+            else:
+                self.logger.warning(f'Queue is full, not acquiring data. Queue size: {self.output_queue.qsize()}'
+                                    f'Input queue size: {self.input_queue.qsize()}')
+                await asyncio.sleep(1)
             if self.simulate_times:
+                self.logger.debug('waiting for {:.2f} seconds'.format(self.dwell_time))
                 await asyncio.sleep(self.dwell_time)
 
         self.logger.info('Scan finished')
@@ -357,12 +368,12 @@ class VirtualSGM4(TCPServer):
     def ADD_POINT(self, *args) -> str:
         assert len(args) == self.ndim, f'expected {self.ndim} arguments, got {len(args)}'
         points = [float(x) for x in args]
-        self.queue.append(points)
+        self.input_queue.put_nowait(points)
         pts = ' '.join([str(x) for x in args])
         return f'ADD_POINT {pts}'# {len(self.queue)}
 
     def CLEAR(self) -> str:
-        self.queue = []
+        self.input_queue.clear()
         return f'CLEAR'
 
     def SCAN(self) -> str:
@@ -375,7 +386,7 @@ class VirtualSGM4(TCPServer):
 
     def END(self) -> str:
         self.wait_at_queue_empty = False
-        return f'END {len(self.queue)}'
+        return f'END {self.input_queue.qsize()}'
 
     def ABORT(self) -> str:
         self.status = 'ABORTED'
@@ -400,7 +411,7 @@ class VirtualSGM4(TCPServer):
         return f'CURRENT_POS {pos_str}'
     
     def QUEUE(self) -> str:
-        return f'QUEUE {len(self.queue)}'
+        return f'QUEUE {self.input_queue.qsize()}'
     
     def STATUS(self) -> str:
         return f'STATUS {self.status}'
@@ -413,11 +424,13 @@ class VirtualSGM4(TCPServer):
     
     def MEASURE(self) -> str:
 
-        pos, data = self.measure(changed = [False,False])
-
+        # pos, data = self.acquire_data(changed = [False,False])
+        if self.output_queue.empty():
+            return f'NO_DATA'
+        pos, data = self.output_queue.get_nowait()
         pos_str =  ' '.join([str(v) for v in pos])
         data_str = ' '.join([str(np.round(v,4).astype(np.float32)) for v in data.ravel()])
-
+        self.logger.info(f'MEASURE {len(pos)} {pos_str} {data_str[:30]}...')
         # pos_str =  ' '.join([str(v) for v in self.current_pos])
         # data_str = ' '.join([str(np.round(v,4).astype(np.float32)) for v in np.random.rand(640,400).ravel()])
         # time.sleep(np.random.rand(1)[0])

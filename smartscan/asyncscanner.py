@@ -786,8 +786,12 @@ class AsyncScanManager:
             f"Starting killer loop. Will kill process after {duration} seconds."
         )
         start_time = time.time()
+
         if duration is None:
             duration = self.settings["scanning"]["duration"]
+            end_time = start_time + duration
+            end_time_str = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(end_time))
+            self.logger.warning(f'Scan will end in {duration} seconds. At {end_time_str}')
         if duration is not None:
             time_left = duration
             while not self._should_stop:

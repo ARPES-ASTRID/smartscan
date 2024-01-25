@@ -43,11 +43,19 @@ preprocessing:
   #     y_lim: [10,-10]
 
 tasks: # list of tasks to which to reduce the data
-  laplace_filter:
-    function: laplace_filter
+  # laplace_filter:
+  #   function: laplace_filter
+  #   params:
+  #     sigma: 5
+  #     norm: False
+  #     roi: [[145, 190], [10, 140]]
+  curvature:
+    function: curvature
     params:
-      sigma: 5
-      norm: False
+      bw: 5
+      c1: 0.001
+      c2: 0.001
+      w: 1
       roi: [[145, 190], [10, 140]]
   # contrast_noise_ratio:
   #   function: contrast_noise_ratio

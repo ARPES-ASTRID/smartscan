@@ -18,19 +18,53 @@ from smartscan import AsyncScanManager
 batched = True
 
 
-def batches(settings,logger) -> None:
-    iter_pars = [0.1,0.5,1,2,3]
+def aqf_batch(settings,logger) -> None:
+    tasks = {
+        'laplace_filter': {            
+            'function': 'laplace_filter', 
+            'params': {
+                'sigma': 10, 
+                'roi': [[145,190],[10,140]]
+            }
+        },
+        'curvature': {
+            'function': 'curvature', 
+            'params': {
+                'bw': 5,
+                'c1': 0.001,
+                'c2': 0.001,
+                'w': 1,
+                'roi': [[145, 190], [10, 140]]
+            }
+        },
+    }
+    rois = [[145,190],[10,140]], [[45,190],[10,140]]
+    aqf_values = [0.1,0.5,1]
     i = 1
     # ~~~batch~~~~
-    for val in iter_pars:
-        logger.info(f"Starting batch run #{i}")
-        settings['acquisition_function']['params']['a'] = 0.1
-        settings['cost_function']['params']['weight'] = 0.1
-        run_asyncio(settings)
-        logger.info(f'Finished batch run #{i}')
-        logger.info(f'Waiting for 30 seconds')
-        time.sleep(30)
-        i += 1
+    for task in ["curvature","laplace_filter"]:
+        for roi in rois:
+            settings['tasks'] = {
+                "mean": {
+                    "function": "mean",
+                    "params": {
+                        "roi":roi
+                    }
+                },
+                task: tasks[task]
+            }
+            settings['tasks'][task]['params']['roi'] = roi
+            for val in aqf_values:
+                logger.info(f"Starting batch run #{i}")
+                settings['acquisition_function']['params']['a'] = val
+                print(f"tasks: {settings['tasks'].keys()}")
+                print(f"roi: {settings['tasks']['mean']['params']['roi']}")
+                print(f"a: {settings['acquisition_function']['params']['a']}")
+                run_asyncio(settings)
+                logger.info(f'Finished batch run #{i}')
+                logger.info(f'Waiting for 30 seconds')
+                time.sleep(30)
+                i += 1
     
 
 

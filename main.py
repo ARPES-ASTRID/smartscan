@@ -28,7 +28,7 @@ def aqf_batch(settings,logger) -> None:
         'laplace_filter': {            
             'function': 'laplace_filter', 
             'params': {
-                'sigma': 10, 
+                'sigma': 2,
                 'roi': [[145,190],[10,140]]
             }
         },
@@ -46,7 +46,7 @@ def aqf_batch(settings,logger) -> None:
     rois = [[145,190],[10,140]], [[45,190],[10,140]]
     
     # ~~~batch~~~~ 
-    cost_values = [0.01, 0.1, 1, 10, 0.05, 0.5, 5]
+    cost_values = [0.1, 1, 10, 0.05, 0.5, 5]
 
     settings['acquisition_function']['params']['a'] = 0.5
     settings['scanning']['n_points'] = 500

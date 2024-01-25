@@ -181,7 +181,6 @@ def manhattan_avoid_repetition(
         x_ = None
         for xx in x:
             all_distances = np.linalg.norm(xx-prev_points, axis=1)
-            all_distances = np.linalg.norm(xx-prev_points)
             cur_min = np.min(all_distances)
             if cur_min < min_dist:
                 x_ = xx

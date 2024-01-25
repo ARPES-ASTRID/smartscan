@@ -54,7 +54,7 @@ def laplace_filter(
     if reduction is not None:
         return reduction(np.abs(laplace(filt)))
     else:
-        return np.abs(laplace(filt))
+        return laplace(filt)
     
 
 def contrast_noise_ratio(
@@ -174,7 +174,7 @@ def curvature(
     cv2d = ((1 + c1*dx**2)*c2*d2y - 2*c1*c2*dx*dy*dxdy +
             (1 + c2*dy**2)*c1*d2x) / (1 + c1*dx**2 + c2*dy**2)**1.5
     if reduction is not None:
-        return reduction(cv2d)
+        return reduction(np.abs(cv2d))
     else:
         return cv2d
 

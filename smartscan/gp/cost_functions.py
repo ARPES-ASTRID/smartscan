@@ -99,6 +99,16 @@ def compute_costs(
     logger.debug(f"Costs computed: {cost}")
     return np.asarray(cost).T
 
+def weighted_manhattan_distance(
+        a:np.ndarray,
+        b:np.ndarray,
+        weights:np.ndarray=None
+    ) -> float:
+    if weights is None:
+        weights = np.ones(len(a))
+    assert len(a) == len(b) == len(weights), "a, b and weights must have the same length"
+    return np.sum(weights * np.abs(a-b))
+
 def manhattan_cost_function(
         origin: np.ndarray[float],
         x: Sequence[Tuple[float,float]],
@@ -125,24 +135,33 @@ def manhattan_cost_function(
         logger = logging.getLogger('manhattan_cost_function')
 
     origin = np.array(origin)
-    # assert origin.shape[0] == 2, "origin must be a 2D point"
+    assert origin.shape[0] == 2, "origin must be a 2D point in the cost function"
 
     x = np.array(x)
     if x.ndim == 1:
         x = x.reshape(-1,1) # make sure x is a 2D array
-    # assert x.shape[1] == 2, "x must be a 2D point or a list of 2D points"
+    assert x.shape[1] == 2, "dest.pt. x must be a 2D point or a list of 2D points in the cost function"
 
     # gather parameters
     if cost_func_params is None:
         cost_func_params = {}
     else:
         cost_func_params = cost_func_params.copy()
-    speed = cost_func_params.get('speed',250)
     dwell_time = cost_func_params.get('dwell_time',0.5)
     dead_time = cost_func_params.get('dead_time',0.6)
     point_to_um = cost_func_params.get('point_to_um',1.0)
-    weight = cost_func_params.get('weight',1.0)
 
+    speed = cost_func_params.get('speed',250)
+    if np.array(speed).size == 1:
+        speed = np.ones_like(origin) * speed
+    elif np.array(speed).shape != origin.shape:
+        raise ValueError(f"speed must be a scalar or an array of size {origin.shape}")
+    
+    weight = cost_func_params.get('weight',np.ones_like(origin))
+    if np.array(weight).size == 1:
+        weight = np.ones_like(origin) * weight
+    elif np.array(weight).shape != origin.shape:
+        raise ValueError(f"weight must be a scalar or an array of size {origin.shape}")
     unrecognized = [k for k in cost_func_params.keys() if k not in ['speed','dwell_time','dead_time','point_to_um','weight']]
 
     if len(unrecognized) > 0:
@@ -150,9 +169,10 @@ def manhattan_cost_function(
 
     # logger.debug(f"Parameters: speed={speed}, dwell_time={dwell_time}, dead_time={dead_time}, point_to_um={point_to_um}, weight={weight}")
     times = np.zeros(x.shape[0])
+
     for i in range(x.shape[0]):
-        distance = manhattan_distance(origin,x[i,:]) * point_to_um
-        times[i] = weight * distance / speed  + dwell_time + dead_time
+        distance = weighted_manhattan_distance(origin, x[i,:], weight/speed) * point_to_um
+        times[i] = distance / speed  + dwell_time + dead_time
     logger.debug(f"Times: {min(times):.3f} - {max(times):.3f} ")
     return times
 

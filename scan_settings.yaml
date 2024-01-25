@@ -82,7 +82,7 @@ acquisition_function:
 cost_function:
   function: manhattan_avoid_repetition # name of the function found in gp/cost_functions.py
   params: 
-    speed: 300 # um/s
+    speed: [300,300] # um/s
     dwell_time: 2 # seconds
     dead_time: 0.1 # seconds
     min_distance: 4.99 # This should always be just below the step size of the scanner

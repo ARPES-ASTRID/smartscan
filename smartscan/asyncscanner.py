@@ -475,8 +475,8 @@ class AsyncScanManager:
         self.logger.info("Starting GP loop.")
         await asyncio.sleep(1)  # wait a bit before starting
         while not self._ready_for_gp and self.relative_inital_points is not None:
-            has_new_data = self.update_data_and_positions()
-            if len(self.positions) > len(self.relative_inital_points):
+            # has_new_data = self.update_data_and_positions()
+            if max(self.n_points, self.n_spectra/2) > len(self.relative_inital_points) :
                 self._ready_for_gp = True
             else:
                 self.logger.debug(f"Waiting for data to be ready for GP. {len(self.positions)}/{len(self.relative_inital_points)} ")

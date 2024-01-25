@@ -1,5 +1,6 @@
 from typing import Any, Callable, Sequence, Tuple
 import logging
+from networkx import selfloop_edges
 import numpy as np
 
 from ..utils import manhattan_distance
@@ -99,6 +100,16 @@ def compute_costs(
     logger.debug(f"Costs computed: {cost}")
     return np.asarray(cost).T
 
+def weighted_manhattan_distance(
+        a:np.ndarray,
+        b:np.ndarray,
+        weights:np.ndarray=None
+    ) -> float:
+    if weights is None:
+        weights = np.ones(len(a))
+    assert len(a) == len(b) == len(weights), "a, b and weights must have the same length"
+    return np.sum(weights * np.abs(a-b))
+
 def manhattan_cost_function(
         origin: np.ndarray[float],
         x: Sequence[Tuple[float,float]],
@@ -125,24 +136,33 @@ def manhattan_cost_function(
         logger = logging.getLogger('manhattan_cost_function')
 
     origin = np.array(origin)
-    # assert origin.shape[0] == 2, "origin must be a 2D point"
+    # assert origin.shape[0] == 2, "origin must be a 2D point in the cost function"
 
     x = np.array(x)
     if x.ndim == 1:
         x = x.reshape(-1,1) # make sure x is a 2D array
-    # assert x.shape[1] == 2, "x must be a 2D point or a list of 2D points"
+    # assert x.shape[1] == 2, "dest.pt. x must be a 2D point or a list of 2D points in the cost function"
 
     # gather parameters
     if cost_func_params is None:
         cost_func_params = {}
     else:
         cost_func_params = cost_func_params.copy()
-    speed = cost_func_params.get('speed',250)
     dwell_time = cost_func_params.get('dwell_time',0.5)
     dead_time = cost_func_params.get('dead_time',0.6)
     point_to_um = cost_func_params.get('point_to_um',1.0)
-    weight = cost_func_params.get('weight',1.0)
 
+    speed = cost_func_params.get('speed',250)
+    if np.array(speed).size == 1:
+        speed = np.ones_like(origin) * speed
+    elif np.array(speed).shape != origin.shape:
+        raise ValueError(f"speed must be a scalar or an array of size {origin.shape}")
+    
+    weight = cost_func_params.get('weight',np.ones_like(origin))
+    if np.array(weight).size == 1:
+        weight = np.ones_like(origin) * weight
+    elif np.array(weight).shape != origin.shape:
+        raise ValueError(f"weight must be a scalar or an array of size {origin.shape}")
     unrecognized = [k for k in cost_func_params.keys() if k not in ['speed','dwell_time','dead_time','point_to_um','weight']]
 
     if len(unrecognized) > 0:
@@ -150,9 +170,10 @@ def manhattan_cost_function(
 
     # logger.debug(f"Parameters: speed={speed}, dwell_time={dwell_time}, dead_time={dead_time}, point_to_um={point_to_um}, weight={weight}")
     times = np.zeros(x.shape[0])
+
     for i in range(x.shape[0]):
-        distance = manhattan_distance(origin,x[i,:]) * point_to_um
-        times[i] = weight * distance / speed  + dwell_time + dead_time
+        distance = weighted_manhattan_distance(origin, x[i,:], weight/speed) * point_to_um
+        times[i] = distance / speed  + dwell_time + dead_time
     logger.debug(f"Times: {min(times):.3f} - {max(times):.3f} ")
     return times
 
@@ -172,11 +193,14 @@ def manhattan_avoid_repetition(
     cfp = cost_func_params.copy()
     min_distance = cfp.pop('min_distance')
     gp_x_data:np.ndarray = cfp.pop('prev_points')
+    n_tasks = cfp.pop('n_tasks')
+    n_dim = cfp.pop('n_dim')
     
-    prev_points = np.array(gp_x_data)[::2,:-1]
+    
+    prev_points = np.array(gp_x_data)[::n_tasks,:-1]
     logger.debug(f"some prev points: {prev_points[-3:]}")
 
-    if prev_points.shape[0] > 0:
+    if prev_points.shape[0] > 0 and n_dim == 2:
         min_dist = np.inf
         x_ = None
         for xx in x:
@@ -193,3 +217,58 @@ def manhattan_avoid_repetition(
         logger.debug(f"closest point to {x_} is {min_dist} away")
     return manhattan_cost_function(origin,x,cfp)
 
+def cost_per_axis(        
+        origin: np.ndarray[float],
+        x: Sequence[Tuple[float,float]],
+        cost_func_params: dict[str, Any] = {},
+    ) -> Sequence[float]:
+    """Compute the movement cost between an origin and a list of points"""
+    logger = logging.getLogger('cost_per_axis')
+    logger.debug("cost func params:")
+    for k,v in cost_func_params.items():
+        if isinstance(v,np.ndarray):
+            logger.debug(f'\t{k}: {v.shape}')
+        else:
+            logger.debug(f'\t{k}: {v}')
+
+    cfp = cost_func_params.copy()
+    speed = cfp.get('speed',250)
+    if np.array(speed).size == 1:
+        speed = np.ones_like(origin) * speed
+    elif np.array(speed).shape != origin.shape:
+        raise ValueError(f"speed must be a scalar or an array of size {origin.shape}")
+    speed[speed==0] = np.inf # avoid division by zero
+    weight = cfp.get('weight',np.ones_like(origin))
+    if np.array(weight).size == 1:
+        weight = np.ones_like(origin) * weight
+    elif np.array(weight).shape != origin.shape:
+        raise ValueError(f"weight must be a scalar or an array of size {origin.shape}")
+    
+    n_tasks = cfp.get('n_tasks')
+    n_dim = cfp.get('n_dim')
+    axes = cfp.get('axes')
+    prev_points = np.array(cfp.get('prev_points'))[::n_tasks,:-1]
+    
+    distances = np.zeros((len(x),n_dim))
+    out = np.zeros((len(x)))
+    for i,xx in enumerate(x):
+        rounded = round_to_axes(xx,axes)
+        if np.any(np.all(np.isclose(rounded, prev_points), axis=1)):
+            # idx = np.argmin(np.linalg.norm(xx-prev_points, axis=1))
+            logger.warning(f"Point {np.asarray(xx).ravel()} rounds to {rounded} which was already measured")
+            out[i] = 1_000_000_000
+        else:
+            distances[i,:] = np.abs(xx - origin)
+            out[i] = np.sum(1 + weight * distances / speed)
+    assert len(out) == len(x)
+    return out
+
+def round_to_axes(
+        x: np.ndarray[float],
+        axes: Sequence[Sequence[float]],
+    ) -> np.ndarray[float]:
+    """Round a point to the closest point on a grid"""
+    new = np.empty_like(x)
+    for i in range(len(x)):
+        new[i] = np.argmin(np.abs(axes[i] - x[i]))
+    return new

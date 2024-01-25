@@ -69,9 +69,6 @@ def aqf_batch(settings,logger) -> None:
                 i += 1
     
 
-
-
-
 #############################################################################
 
 def run_asyncio(settings) -> None:

@@ -41,6 +41,7 @@ if __name__ == '__main__':
         logger=logger,
         simulate_times=settings['scan']['simulate_times'],
         save_to_file=settings['scan']['save_to_file'],
+        dwell_time=settings['scan']['dwell_time'],
     )
     vm.init_scan_from_file(filename=source_file)
     logger.info(f'Initialized scan from file {source_file}')

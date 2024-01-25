@@ -22,13 +22,17 @@ plots:
   posterior_map_shape: [50,50] #full #"auto"
 
 scanning:
-  max_points: 750 # 0 for unlimited
-  duration: 1_000_000
+  max_points: 1000 # 0 for unlimited
+  duration: 3600
   train_at: [10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000]
   train_every: 0 # 0 for no training
   normalize_values: training # one of init, training, always, fixed or never
   fixed_normalization: [1.0, 1.0] # normalization factors for each task
-
+  merge_unique_positions: true
+  base_error: 0.01 # 1% error
+  initial_points_2D: hexgrid_19
+  initial_points_3D: border_25
+  
 preprocessing: 
 # list of preprocessing functions to apply to the data. 
 # Functions are chained in the order they are listed.

@@ -15,8 +15,10 @@ from smartscan.utils import ColoredFormatter
 from smartscan import AsyncScanManager
 
 
-batched = True
+batched = False
 
+def batches(settings,logger):
+    aqf_batch(settings,logger)
 
 def aqf_batch(settings,logger) -> None:
     tasks = {

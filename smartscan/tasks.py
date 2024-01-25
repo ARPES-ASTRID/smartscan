@@ -113,7 +113,8 @@ def image_entropy(
 
     Args:
         x (np.ndarray): input array
-      
+        roi (Sequence[Sequence[int]], optional): region of interest. Defaults to None.
+
     Returns:
         float: negative entropy
     """
@@ -123,3 +124,57 @@ def image_entropy(
     hist, _ = np.histogram(x, bins=256, range=(0, 256))
     hist = hist / hist.sum()
     return entropy(hist)
+
+def curvature(
+        arpesmap: np.ndarray, 
+        bw: float = 5, 
+        c1: float = 0.001,
+        c2: float = 0.001,
+        w: float = 1,
+        roi: Sequence[Sequence[int]] = None,
+        reduction: Callable = np.mean,
+    ) -> float:
+    """ Calculations curvature array
+
+    Calculates the curvature of an array using a 2D gaussian kernel
+    defined in https://doi.org/10.1063/1.3585113
+
+    Args:
+        x (np.ndarray): input array
+        bw (float, optional): bandwidth of the smoothing kernel. Defaults to 5.
+        c1 (float, optional): curvature parameter. Defaults to 0.001.
+        c2 (float, optional): curvature parameter. Defaults to 0.001.
+        w (float, optional): aspect ratio. Defaults to 1.
+        roi (Sequence[Sequence[int]], optional): region of interest. Defaults to None.
+    
+    Returns:
+        cv2d(np.array): curvature
+    """
+    from astropy.convolution import convolve, Box2DKernel
+
+    # https://docs.astropy.org/en/latest/api/astropy.convolution.Box2DKernel.html
+    # https://docs.astropy.org/en/latest/api/astropy.convolution.convolve.html
+
+    if roi is not None:
+        roi = np.array(roi)
+        arpesmap = arpesmap[roi[0,0]:roi[0,1], roi[1,0]:roi[1,1]]
+    
+    x = np.arange(arpesmap.shape[0]) 
+    y = np.arange(arpesmap.shape[1])
+    
+    data_smth = convolve(arpesmap, Box2DKernel(bw), boundary='extend')
+
+    dx = np.gradient(data_smth, axis=0)
+    dy = np.gradient(data_smth, axis=1) * w
+    d2x = np.gradient(np.gradient(data_smth, x, axis=0), x, axis=0)
+    d2y = np.gradient(np.gradient(data_smth, y, axis=1), y, axis=1) * w * w
+    dxdy = np.gradient(np.gradient(data_smth, y, axis=1), x, axis=0) * w
+
+    # 2D curvature 
+    cv2d = ((1 + c1*dx**2)*c2*d2y - 2*c1*c2*dx*dy*dxdy +
+            (1 + c2*dy**2)*c1*d2x) / (1 + c1*dx**2 + c2*dy**2)**1.5
+    if reduction is not None:
+        return reduction(cv2d)
+    else:
+        return cv2d
+

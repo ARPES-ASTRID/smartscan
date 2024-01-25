@@ -604,6 +604,11 @@ class AsyncScanManager:
         init_hyperparameters = np.array(
             [float(n) for n in fvgp_pars.pop("init_hyperparameters")]
         )
+        if len(init_hyperparameters) != isd:
+            raise ValueError(
+                f"Length mismatch between init_hyperparameters ({len(init_hyperparameters)})"
+                f"and input_space_dimension ({isd})."
+            )
         self.logger.debug("Initializing GP:")
         self.logger.debug(f"\tinit_hyperparameters: {init_hyperparameters}")
         for k,v in fvgp_pars.items():
@@ -642,6 +647,11 @@ class AsyncScanManager:
         hps_old = self.gp.hyperparameters.copy()
         train_pars = self.settings["gp"]["training"].copy()
         hps_bounds = np.asarray(train_pars.pop("hyperparameter_bounds"))
+        if len(hps_bounds) != len(hps_old):
+            raise ValueError(
+                f"Length mismatch between hyperparameter_bounds ({len(hps_bounds)})"
+                f"and hyperparameters ({len(hps_old)})."
+            )
         if "bounds" not in self.hyperparameter_history.keys():
             self.hyperparameter_history["bounds"] = hps_bounds.tolist() 
         self.logger.info("Training GP:")

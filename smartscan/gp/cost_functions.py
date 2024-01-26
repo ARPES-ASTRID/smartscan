@@ -259,7 +259,7 @@ def cost_per_axis(
             out[i] = 1_000_000_000
         else:
             distances[i,:] = np.abs(xx - origin)
-            out[i] = np.sum(1 + weight * distances / speed)
+            out[i] = 1 + np.sum(weight * distances / speed)
     assert len(out) == len(x)
     return out
 

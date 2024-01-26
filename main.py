@@ -46,10 +46,10 @@ def aqf_batch(settings,logger) -> None:
     rois = [[145,190],[10,140]], [[45,190],[10,140]]
     
     # ~~~batch~~~~ 
-    cost_values = [0.1, 1, 10, 0.05, 0.5, 5]
+    cost_values = [1, 10, 0.05, 0.5, 5]
 
     settings['acquisition_function']['params']['a'] = 0.5
-    settings['scanning']['n_points'] = 500
+    settings['scanning']['max_points'] = 500
     settings['tasks'] = {
                 "mean": {
                     "function": "mean",

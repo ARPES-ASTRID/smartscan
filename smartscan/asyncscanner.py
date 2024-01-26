@@ -639,7 +639,7 @@ class AsyncScanManager:
                 self.logger.debug(f"\t{k} = {v}")
             self.gp.init_cost(
                 cost_func_callable,
-                cost_function_parameters=cost_func_params,
+                cost_function_parameters=cost_func_params.copy(),
             )
 
     def should_train(self) -> bool:
@@ -682,7 +682,11 @@ class AsyncScanManager:
         self.logger.info("Hyperparameters: ")
         for old, new, bounds in zip(hps_old, hps_new, hps_bounds):
             change = (new - old) / old
-            self.logger.info(f"\t{old:.2f} -> {new:.2f} ({change:.2%}) | {bounds}")
+            message = f"\t{old:.2f} -> {new:.2f} ({change:.2%}) | {bounds}"
+            if new in bounds:
+                self.logger.warning(f"{message} Hit boundaries!!")
+            else:
+                self.logger.info(message)
         self.hyperparameter_history[f"training{self.iter_counter:04.0f}"] = {
             "hyperparameters": [float(f) for f in self.gp.hyperparameters],
             "time": time.time() - t,

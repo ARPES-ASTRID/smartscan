@@ -16,9 +16,19 @@ from smartscan.utils import ColoredFormatter
 from smartscan import AsyncScanManager
 
 
-batched = False
+batched = True
 
 def batches(settings,logger):
+    settings['acquisition_function']['params']['a'] = 50
+    # settings['cost_function']['params']['weight'] = [0,0.1,0.1]
+    run_asyncio(settings)
+    logger.info(f'Waiting for 30 seconds')
+    time.sleep(30)
+    settings['acquisition_function']['params']['a'] = 100
+    # settings['cost_function']['params']['weight'] = [0,1,1]
+    run_asyncio(settings)
+    logger.info(f'Waiting for 30 seconds')
+    time.sleep(30)
     aqf_batch(settings,logger)
 
 def aqf_batch(settings,logger) -> None:

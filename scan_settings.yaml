@@ -22,8 +22,8 @@ plots:
   posterior_map_shape: [50,50] #full #"auto"
 
 scanning:
-  max_points: 1000 # 0 for unlimited
-  duration: 7200
+  max_points: 999 # 0 for unlimited
+  duration: 3600
   train_at: [10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000]
   train_every: 0 # 0 for no training
   normalize_values: training # one of init, training, always, fixed or never
@@ -73,7 +73,7 @@ tasks: # list of tasks to which to reduce the data
 acquisition_function:
   function: acquisition_function_nd # name of the function found in gp/acquisition_functions.py
   params:
-    a: 1 # exploration vs exploitation, i.e. variance weight
+    a: 50 # exploration vs exploitation, i.e. variance weight
     weights: null
     norm: 1 # normalization factor for acquisition function
     c: 0 # covariance weight
@@ -108,10 +108,10 @@ gp:
   training:
     hyperparameter_bounds: [
       [1_000_000, 1_000_000_000],
-      [1, 10_000],
-      [10, 10_000],
-      [10, 10_000],
-      [0.001, 1000]
+      [1, 50_000],
+      [10, 50_000],
+      [10, 50_000],
+      [0.001, 5000]
     ]
     pop_size: 20 # population size for global optimization
     max_iter: 2 # maximum number of iterations for global optimization

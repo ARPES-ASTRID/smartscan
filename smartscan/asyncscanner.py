@@ -851,8 +851,8 @@ class AsyncScanManager:
         self.logger.info("starting plotting tool loop")
         plotter = plot.Plotter(self.settings)
         while not self._should_stop: 
-            if self.replot:
-                self.replot = False
+            if self._should_replot:
+                self._should_replot = False
                 self.logger.debug("Plotting...")
                 plotter.update(
                     gp=self.gp,

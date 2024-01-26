@@ -19,17 +19,61 @@ from smartscan import AsyncScanManager
 batched = True
 
 def batches(settings,logger):
-    settings['acquisition_function']['params']['a'] = 50
-    # settings['cost_function']['params']['weight'] = [0,0.1,0.1]
+
+    # ~~~run~~~~
+    settings['cost_function']['params']['weight'] = [100,100]
+    settings['acquisition_function']['params']['a'] = 1
+    settings['scanning']['max_points'] = 300
+    settings['scanning']['duration'] = 1200
     run_asyncio(settings)
     logger.info(f'Waiting for 30 seconds')
     time.sleep(30)
-    settings['acquisition_function']['params']['a'] = 100
-    # settings['cost_function']['params']['weight'] = [0,1,1]
+
+    # ~~~run~~~~
+    settings['cost_function']['params']['weight'] = [1000,1000]
+    settings['acquisition_function']['params']['a'] = 1
+    settings['scanning']['max_points'] = 300
+    settings['scanning']['duration'] = 1200
     run_asyncio(settings)
     logger.info(f'Waiting for 30 seconds')
     time.sleep(30)
-    aqf_batch(settings,logger)
+
+    # ~~~run~~~~
+    settings['cost_function']['params']['weight'] = [100,100]
+    settings['acquisition_function']['params']['a'] = 10
+    settings['scanning']['max_points'] = 300
+    settings['scanning']['duration'] = 1200
+    run_asyncio(settings)
+    logger.info(f'Waiting for 30 seconds')
+    time.sleep(30)
+
+    # ~~~run~~~~
+    settings['cost_function']['params']['weight'] = [1000,1000]
+    settings['acquisition_function']['params']['a'] = 10
+    settings['scanning']['max_points'] = 300
+    settings['scanning']['duration'] = 1200
+    run_asyncio(settings)
+    logger.info(f'Waiting for 30 seconds')
+    time.sleep(30)
+
+    # ~~~run~~~~
+    settings['cost_function']['params']['weight'] = [100,100]
+    settings['acquisition_function']['params']['a'] = 0.1
+    settings['scanning']['max_points'] = 300
+    settings['scanning']['duration'] = 1200
+    run_asyncio(settings)
+    logger.info(f'Waiting for 30 seconds')
+    time.sleep(30)
+
+        # ~~~run~~~~
+    settings['cost_function']['params']['weight'] = [1000,1000]
+    settings['acquisition_function']['params']['a'] = 0.1
+    settings['scanning']['max_points'] = 300
+    settings['scanning']['duration'] = 1200
+    run_asyncio(settings)
+    logger.info(f'Waiting for 30 seconds')
+    time.sleep(30)
+
 
 def aqf_batch(settings,logger) -> None:
     i = 1

@@ -23,14 +23,14 @@ plots:
 
 scanning:
   max_points: 1000 # 0 for unlimited
-  duration: 3600
+  duration: 7200
   train_at: [10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000]
   train_every: 0 # 0 for no training
   normalize_values: training # one of init, training, always, fixed or never
   fixed_normalization: [1.0, 1.0] # normalization factors for each task
   merge_unique_positions: true
   base_error: 0.01 # 1% error
-  initial_points: hexgrid_2D_19
+  initial_points: grid_3D_27
   
 preprocessing: 
 # list of preprocessing functions to apply to the data. 
@@ -59,7 +59,7 @@ tasks: # list of tasks to which to reduce the data
       c1: 0.001
       c2: 0.001
       w: 1
-      roi: [[145, 190], [10, 140]]
+      roi: [[145, 190], [20, 130]]
   # contrast_noise_ratio:
   #   function: contrast_noise_ratio
   #   params: 
@@ -68,12 +68,12 @@ tasks: # list of tasks to which to reduce the data
   mean: # name of the task found in gp/tasks.py
     function: mean # name of the function
     params: 
-      roi: [[145, 190], [10, 140]]
+      roi: [[145, 190], [20, 130]]
 
 acquisition_function:
   function: acquisition_function_nd # name of the function found in gp/acquisition_functions.py
   params:
-    a: 0.1 # exploration vs exploitation, i.e. variance weight
+    a: 1 # exploration vs exploitation, i.e. variance weight
     weights: null
     norm: 1 # normalization factor for acquisition function
     c: 0 # covariance weight
@@ -81,11 +81,11 @@ acquisition_function:
 cost_function:
   function: cost_per_axis # manhattan_avoid_repetition # name of the function found in gp/cost_functions.py
   params: 
-    speed: [300,300] # um/s, 0 speed is infinite
+    speed: [0, 300,300] # um/s, 0 speed is infinite
     # dwell_time: 2 # seconds
     # dead_time: 0.1 # seconds
     # min_distance: 4.99 # This should always be just below the step size of the scanner
-    weight: [1,1] # 0.01 # weight of the cost function
+    weight: [0, .01,.01] # 0.01 # weight of the cost function
 
 gp:
   optimizer:
@@ -96,7 +96,7 @@ gp:
       1_000_000, 
       100, 
       100, 
-      # 100, 
+      100, 
       0.5
     ]
     compute_device: cpu # cpu or cuda:0
@@ -108,10 +108,10 @@ gp:
   training:
     hyperparameter_bounds: [
       [1_000_000, 1_000_000_000],
-      [10, 1000],
-      [10, 1000],
-      # [10, 1000],
-      [0.001, 5]
+      [1, 10_000],
+      [10, 10_000],
+      [10, 10_000],
+      [0.001, 1000]
     ]
     pop_size: 20 # population size for global optimization
     max_iter: 2 # maximum number of iterations for global optimization

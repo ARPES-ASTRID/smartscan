@@ -764,7 +764,7 @@ class AsyncScanManager:
             if self.iter_counter >= self.settings["scanning"]["max_points"]:
                 self.logger.warning(
                     f"Max number of iterations of {self.settings['scanning']['max_points']}"
-                    " reached. Ending scan."
+                    f" reached. Ending scan. It lasted {time.time()-self.start_time:.0f} s"
                 )
                 self._should_stop = True
                 break
@@ -825,18 +825,18 @@ class AsyncScanManager:
         self.logger.info(
             f"Starting killer loop. Will kill process after {duration} seconds."
         )
-        start_time = time.time()
+        self.start_time = time.time()
 
         if duration is None:
             duration = self.settings["scanning"]["duration"]
-            end_time = start_time + duration
+            end_time = self.start_time + duration
             end_time_str = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(end_time))
             self.logger.warning(f'Scan will end in {duration} seconds. At {end_time_str}')
         if duration is not None:
             time_left = duration
             while not self._should_stop:
                 time_left -= 1
-                if time_left <= 0 or time.time() > start_time + duration:
+                if time_left <= 0 or time.time() > self.start_time + duration:
                     break
                 await asyncio.sleep(1)
             self.logger.info(

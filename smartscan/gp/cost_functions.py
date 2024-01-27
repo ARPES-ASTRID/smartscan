@@ -237,7 +237,9 @@ def cost_per_axis(
         speed = np.ones_like(origin) * speed
     elif np.array(speed).shape != origin.shape:
         raise ValueError(f"speed must be a scalar or an array of size {origin.shape}")
-    speed[speed == 0] = np.inf # avoid division by zero
+    for i in range(len(speed)):
+        if not speed[i] > 0:
+            speed[i] = 0 
     weight = cfp.get('weight',np.ones_like(origin))
     if np.array(weight).size == 1:
         weight = np.ones_like(origin) * weight

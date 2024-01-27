@@ -791,7 +791,7 @@ class AsyncScanManager:
         self.remote.END()
 
     # plotting loop
-    async def old_plotting_loop(self) -> None:
+    async def plotting_loop(self) -> None:
         """Plotting loop.
 
         This loop is responsible for plotting the data.
@@ -844,20 +844,20 @@ class AsyncScanManager:
             )
             self.stop()
 
-    async def plotting_loop(self) -> None:
+    async def new_plotting_loop(self) -> None:
         """ plotting loop. refreshing the figure"""
         self.logger.info("Starting plotting loop.")
         await asyncio.sleep(1)
         self.logger.info("starting plotting tool loop")
         plotter = plot.Plotter(self.settings)
         while not self._should_stop: 
-            if self._should_replot:
+            if self._should_replot and self.n_dim == 2:
                 self._should_replot = False
                 self.logger.debug("Plotting...")
                 plotter.update(
                     gp=self.gp,
                     positions=np.asarray(self.positions),
-                    values=np.asarray(self.values),
+                    values=np.asarray(self.task_values),
                     last_spectrum=self.last_spectrum,
                 )
             else:

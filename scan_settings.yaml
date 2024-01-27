@@ -23,14 +23,14 @@ plots:
 
 scanning:
   max_points: 999 # 0 for unlimited
-  duration: 3600
+  duration: 7200
   train_at: [10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000]
   train_every: 0 # 0 for no training
   normalize_values: training # one of init, training, always, fixed or never
   fixed_normalization: [1.0, 1.0] # normalization factors for each task
   merge_unique_positions: true
   base_error: 0.01 # 1% error
-  initial_points: hexgrid_2D_19 # grid_3D_27
+  initial_points: hexgrid_2D_19 # grid_3D_27 
   
 preprocessing: 
 # list of preprocessing functions to apply to the data. 
@@ -94,9 +94,9 @@ gp:
   fvgp:
     init_hyperparameters: [
       1_000_000, 
-      100, 
-      100, 
       # 100, 
+      100, 
+      100, 
       0.5
     ]
     compute_device: cpu # cpu or cuda:0
@@ -108,9 +108,9 @@ gp:
   training:
     hyperparameter_bounds: [
       [1_000_000, 1_000_000_000],
-      [1, 50_000],
+      # [1, 50_000],
       [10, 50_000],
-      # [10, 50_000],
+      [10, 50_000],
       [0.001, 5000]
     ]
     pop_size: 20 # population size for global optimization

@@ -342,8 +342,8 @@ def plot_acqui_f(
         ax[i,1].imshow(PV, clim=[0,1], extent=[*lim_x,*lim_y], origin='lower', aspect="equal")
         ax[i,1].set_title(f'PV: {a * np.sqrt(pvmax):.3f}')
 
-        ax[i,0].scatter(positions[:,0],positions[:,1], s=20,c='r')
-        ax[i,1].scatter(positions[:,0],positions[:,1], s=20,c='r')
+        ax[i,0].scatter(positions[:,0],positions[:,1], s=15, c='r', alpha=.5)
+        ax[i,1].scatter(positions[:,0],positions[:,1], s=15, c='r', alpha=.5)
         ax[i,0].scatter(positions[-1,0],positions[-1,1], s=30,c='white')
         ax[i,1].scatter(positions[-1,0],positions[-1,1], s=30,c='white')
 
@@ -352,7 +352,9 @@ def plot_acqui_f(
     ax[1,2].imshow(np.zeros_like(PM), clim=[0,1], extent=[*lim_x,*lim_y], origin='lower', aspect="equal")
     ax[1,2].scatter(pos[:,0],pos[:,1],s = 25, c=val[:,1],cmap='viridis', marker='o')
     ax[0,2].scatter(pos[-1,0],pos[-1,1],s = 25, c='r', marker='o')
+    ax[0,2].plot(pos[:,0],pos[:,1], c='w',alpha=.5)
     ax[1,2].scatter(pos[-1,0],pos[-1,1],s = 25, c='r', marker='o')
+    ax[1,2].plot(pos[:,0],pos[:,1], c='w',alpha=.5)
 
     ax[2,0].set_title(f'Aq func {aqf.max():.2f}')
     ax[2,0].imshow(

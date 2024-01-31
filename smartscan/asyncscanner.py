@@ -21,9 +21,9 @@ import matplotlib.pyplot as plt
 
 from gpcam.gp_optimizer import fvGPOptimizer
 
-RELATIVE_INITIAL_POINTS_2D = {
-    "center": [[0.5,0.5]],
-    "border_8":[
+RELATIVE_INITIAL_POINTS = {
+    "center_2D": [[0.5,0.5]],
+    "border_2D_8":[
         [0, 0],
         [0, 0.5],
         [0, 1],
@@ -33,7 +33,7 @@ RELATIVE_INITIAL_POINTS_2D = {
         [1, 0],
         [0.5, 0],
     ],
-    "border_16":[
+    "border_2D_16":[
         [0, 0],
         [0, 0.25],
         [0, 0.5],
@@ -51,7 +51,7 @@ RELATIVE_INITIAL_POINTS_2D = {
         [0.5, 0],
         [0.25, 0],
     ],
-    "grid_9":[
+    "grid_2D_9":[
         [0, 0],
         [0, 0.5],
         [0, 1],
@@ -62,7 +62,7 @@ RELATIVE_INITIAL_POINTS_2D = {
         [0.5, 0],
         [0.5, 0.5],
     ],
-    "grid_25":[
+    "grid_2D_25":[
         [0, 0],
         [0, 0.25],
         [0, 0.5],
@@ -89,7 +89,7 @@ RELATIVE_INITIAL_POINTS_2D = {
         [0.75, 0.25],
         [0.75, 0.75],
     ],
-    "hexgrid_19":[
+    "hexgrid_2D_19":[
         [0, 0],
         [0, 0.5],
         [0, 1],
@@ -110,11 +110,8 @@ RELATIVE_INITIAL_POINTS_2D = {
         [0.5, 0.5],
         [0.5, 0.5],
     ],
-}
-
-RELATIVE_INITIAL_POINTS_3D = {
-    "center": [[0.5,0.5,0.5]],
-    "border_25": [
+    "center_3D": [[0.5,0.5,0.5]],
+    "border_3D_25": [
         [0, 0, 0],
         [0, 0, 0.5],
         [0, 0, 1],
@@ -141,7 +138,7 @@ RELATIVE_INITIAL_POINTS_3D = {
         [1, 0.5, 0],
         [0.5, 0.5, 0.5],
     ],
-    "border_64": [
+    "border_3D_64": [
         [0, 0, 0],
         [0, 0, 0.25],
         [0, 0, 0.5],
@@ -183,7 +180,7 @@ RELATIVE_INITIAL_POINTS_3D = {
         [0.5, 0.5, 1],
         [0.5, 0.75, 1],
     ],
-    "grid_27": [
+    "grid_3D_27": [
         [0, 0, 0],
         [0, 0, 0.5],
         [0, 0, 1],
@@ -212,7 +209,7 @@ RELATIVE_INITIAL_POINTS_3D = {
         [0.5, 0.5, 0.25],
         [0.5, 0.5, 0.75],
     ],
-    "grid_125": [
+    "grid_3D_125": [
         [0, 0, 0],
         [0, 0, 0.25],
         [0, 0, 0.5],
@@ -362,17 +359,17 @@ class AsyncScanManager:
 
         # properties
         self._n_dim = None
-
+        self.relative_initial_points = RELATIVE_INITIAL_POINTS[self.settings['scanning']['initial_points']]
         # scan initialization points
-        if self.n_dim == 2:
-            self.logger.info(f"initializing 2D scan using {self.settings['scanning']['initial_points_2D']}")
+        # if self.n_dim == 2:
+        #     self.logger.info(f"initializing 2D scan using {self.settings['scanning']['initial_points_2D']}")
 
-            self.relative_inital_points = RELATIVE_INITIAL_POINTS_2D[self.settings['scanning']['initial_points_2D']]
-        elif self.n_dim == 3:            
-            self.logger.info(f"initializing 3D scan using {self.settings['scanning']['initial_points_3D']}")
-            self.relative_inital_points = RELATIVE_INITIAL_POINTS_3D[self.settings['scanning']['initial_points_3D']]
-        else:
-            self.relative_initial_points = None
+        #     self.relative_initial_points = RELATIVE_INITIAL_POINTS_2D[self.settings['scanning']['initial_points_2D']]
+        # elif self.n_dim == 3:            
+        #     self.logger.info(f"initializing 3D scan using {self.settings['scanning']['initial_points_3D']}")
+        #     self.relative_initial_points = RELATIVE_INITIAL_POINTS_3D[self.settings['scanning']['initial_points_3D']]
+        # else:
+        #     self.relative_initial_points = None
 
     @property
     def filename(self) -> Path:
@@ -642,7 +639,7 @@ class AsyncScanManager:
                 self.logger.debug(f"\t{k} = {v}")
             self.gp.init_cost(
                 cost_func_callable,
-                cost_function_parameters=cost_func_params,
+                cost_function_parameters=cost_func_params.copy(),
             )
 
     def should_train(self) -> bool:
@@ -685,7 +682,11 @@ class AsyncScanManager:
         self.logger.info("Hyperparameters: ")
         for old, new, bounds in zip(hps_old, hps_new, hps_bounds):
             change = (new - old) / old
-            self.logger.info(f"\t{old:.2f} -> {new:.2f} ({change:.2%}) | {bounds}")
+            message = f"\t{old:.2f} -> {new:.2f} ({change:.2%}) | {bounds}"
+            if new in bounds:
+                self.logger.warning(f"{message} Hit boundaries!!")
+            else:
+                self.logger.info(message)
         self.hyperparameter_history[f"training{self.iter_counter:04.0f}"] = {
             "hyperparameters": [float(f) for f in self.gp.hyperparameters],
             "time": time.time() - t,
@@ -743,19 +744,19 @@ class AsyncScanManager:
         self.iter_counter = 0
         self.logger.info("Starting GP loop.")
         await asyncio.sleep(1)  # wait a bit before starting
-        while self.relative_inital_points is not None:
+        while self.relative_initial_points is not None:
             # has_new_data = self.update_data_and_positions()
-            if self.n_positions > len(self.relative_inital_points):
+            if self.n_positions > len(self.relative_initial_points):
                 self.logger.info(f'Enough positions {self.n_positions} to start GP.')
                 break
-            elif all([self.was_already_measured(p) for p in self.relative_inital_points]):
+            elif all([self.was_already_measured(p) for p in self.relative_initial_points]):
                 self.logger.info('All initial points already measured. Ready to start GP.')
                 break
-            elif self.n_spectra > 1.2 * len(self.relative_inital_points):
+            elif self.n_spectra > 1.2 * len(self.relative_initial_points):
                 self.logger.info(f'Enough spectra ({self.n_spectra}) to start GP.')
                 break
             else:
-                self.logger.debug(f"Waiting for data to be ready for GP. {len(self.positions)}/{len(self.relative_inital_points)} ")
+                self.logger.debug(f"Waiting for data to be ready for GP. {len(self.positions)}/{len(self.relative_initial_points)} ")
                 await asyncio.sleep(0.5)
         self.logger.info("Data ready for GP. Starting GP loop.")
         while not self._should_stop:
@@ -763,7 +764,7 @@ class AsyncScanManager:
             if self.iter_counter >= self.settings["scanning"]["max_points"]:
                 self.logger.warning(
                     f"Max number of iterations of {self.settings['scanning']['max_points']}"
-                    " reached. Ending scan."
+                    f" reached. Ending scan. It lasted {time.time()-self.start_time:.0f} s"
                 )
                 self._should_stop = True
                 break
@@ -824,24 +825,44 @@ class AsyncScanManager:
         self.logger.info(
             f"Starting killer loop. Will kill process after {duration} seconds."
         )
-        start_time = time.time()
+        self.start_time = time.time()
 
         if duration is None:
             duration = self.settings["scanning"]["duration"]
-            end_time = start_time + duration
+            end_time = self.start_time + duration
             end_time_str = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(end_time))
             self.logger.warning(f'Scan will end in {duration} seconds. At {end_time_str}')
         if duration is not None:
             time_left = duration
             while not self._should_stop:
                 time_left -= 1
-                if time_left <= 0 or time.time() > start_time + duration:
+                if time_left <= 0 or time.time() > self.start_time + duration:
                     break
                 await asyncio.sleep(1)
             self.logger.info(
                 f"Killer loop strikes! Scan interrupted after {duration} seconds."
             )
             self.stop()
+
+    async def new_plotting_loop(self) -> None:
+        """ plotting loop. refreshing the figure"""
+        self.logger.info("Starting plotting loop.")
+        await asyncio.sleep(1)
+        self.logger.info("starting plotting tool loop")
+        plotter = plot.Plotter(self.settings)
+        while not self._should_stop: 
+            if self._should_replot and self.n_dim == 2:
+                self._should_replot = False
+                self.logger.debug("Plotting...")
+                plotter.update(
+                    gp=self.gp,
+                    positions=np.asarray(self.positions),
+                    values=np.asarray(self.task_values),
+                    last_spectrum=self.last_spectrum,
+                )
+            else:
+                plt.pause(0.01)
+                await asyncio.sleep(0.2)
 
     # all loops and initialization
     async def all_loops(self) -> None:
@@ -900,7 +921,13 @@ class AsyncScanManager:
         """Initialize the scan."""
         self.logger.info(f"Initializing scan.")
         # TODO: add this to settings and give more options
-        self.remote.START()
+        try:
+            self.remote.START()
+        except AssertionError as e:
+            self.logger.error('Assertion error when STARTing the scan: {e}')
+            self.remote.END()
+            time.sleep(10)
+            self.remote.START()
         while True:
             try:
                 s = self.remote.STATUS()
@@ -916,9 +943,9 @@ class AsyncScanManager:
         self.save_log_to_file()
         self.save_settings()
 
-        if self.relative_inital_points is not None:
-            self.logger.info(f"Adding {len(self.relative_inital_points)} points to scan.")
-            for pos in self.relative_inital_points:
+        if self.relative_initial_points is not None:
+            self.logger.info(f"Adding {len(self.relative_initial_points)} points to scan.")
+            for pos in self.relative_initial_points:
                 for i in range(self.n_dim):
                     pos[i] = pos[i] * self.remote.limits[i][1] + (1 - pos[i]) * self.remote.limits[i][0]
 
@@ -1012,4 +1039,5 @@ class AsyncScanManager:
             self.logger.warn(f"{type(e).__name__} while deleting asyncscanner instance: {e}")
 
 if __name__ == "__main__":
+    
     pass

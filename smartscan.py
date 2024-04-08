@@ -221,7 +221,7 @@ def run_gui(settings) -> None:
 
 if __name__ == '__main__':
 
-    settings_file = "scan_settings.yaml"
+    settings_file = "scan_config.yaml"
 
     with open(settings_file) as f:
         settings = yaml.load(f, Loader=yaml.FullLoader)

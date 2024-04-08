@@ -8,7 +8,7 @@ from smartscan.virtualSGM4 import VirtualSGM4
 
 if __name__ == '__main__':
 
-    with open('vSGM4 settings.yaml', 'r') as f:
+    with open('simulator_config.yaml', 'r') as f:
         settings = yaml.safe_load(f)
 
     file_name = settings['data']['file_name']

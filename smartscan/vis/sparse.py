@@ -1,21 +1,14 @@
 from itertools import product
 from typing import Any, Callable, Literal, Sequence
 
-import matplotlib.cm as cm
 import matplotlib.pyplot as plt
 import numpy as np
 import xarray as xr
 from scipy.interpolate import griddata
 from scipy.spatial import Voronoi
 
-__all__ = [
-    "min_step_size",
-    "interpolate_points_to_array",
-    "voronoi_polygon_plot",
-]
 
-
-def min_step_size(arr: np.ndarray)  -> Any:
+def min_step_size(arr: np.ndarray) -> Any:
     """Returns the minimum step size in a 1D array"""
     b = np.diff(np.sort(arr))
     return b[b > 0].min()

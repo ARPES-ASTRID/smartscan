@@ -23,7 +23,7 @@ plots:
 
 scanning:
   max_points: 999 # 0 for unlimited
-  duration: 7200
+  duration: 7200 # in seconds
   train_at: [10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000]
   train_every: 0 # 0 for no training
   normalize_values: training # one of init, training, always, fixed or never
@@ -79,12 +79,9 @@ acquisition_function:
     c: 0 # covariance weight
 
 cost_function:
-  function: cost_per_axis # manhattan_avoid_repetition # name of the function found in gp/cost_functions.py
+  function: cost_per_axis # name of the function found in gp/cost_functions.py
   params: 
     speed: [300,300] # um/s, 0 speed is infinite
-    # dwell_time: 2 # seconds
-    # dead_time: 0.1 # seconds
-    # min_distance: 4.99 # This should always be just below the step size of the scanner
     weight: [100,100] # 0.01 # weight of the cost function
 
 gp:
@@ -124,5 +121,4 @@ gp:
     pop_size: 20 # population size for global optimization
     max_iter: 10 # maximum number of iterations for global optimization
     tol: 0.000001 # tolerance for global optimization
-    # x0: all # positions where to evaluate the acquisition function
 

@@ -1,8 +1,7 @@
 from typing import Callable, Sequence
 
 import numpy as np
-from scipy.ndimage import laplace, sobel
-from scipy.ndimage import gaussian_filter
+from scipy.ndimage import gaussian_filter, laplace, sobel
 from scipy.stats import entropy
 
 
@@ -150,7 +149,7 @@ def curvature(
     Returns:
         cv2d(np.array): curvature
     """
-    from astropy.convolution import convolve, Box2DKernel
+    from astropy.convolution import Box2DKernel, convolve
 
     # https://docs.astropy.org/en/latest/api/astropy.convolution.Box2DKernel.html
     # https://docs.astropy.org/en/latest/api/astropy.convolution.convolve.html

@@ -1,22 +1,21 @@
 """ Main file to run the asyncscanner. """
+import asyncio
+import logging
 import os
 import sys
-import logging
-import asyncio
 import time
-from pathlib import Path
 import traceback
 from copy import deepcopy
+from pathlib import Path
 
 import numpy as np
 import yaml
-from smartscan.gp import cost_functions
 
-from smartscan.utils import ColoredFormatter
 from smartscan import AsyncScanManager
+from smartscan.gp import cost_functions
+from smartscan.utils import ColoredFormatter
 
-
-batched = True
+batched = False
 
 def batches(settings,logger):
     i=1

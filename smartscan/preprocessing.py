@@ -1,5 +1,7 @@
 from typing import Sequence
+
 import numpy as np
+
 
 def reshape(
         x: np.ndarray, 

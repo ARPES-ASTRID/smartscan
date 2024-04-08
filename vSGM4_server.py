@@ -1,14 +1,10 @@
-from smartscan.virtualSGM4 import VirtualSGM4
-import time
-import numpy as np
-from pathlib import Path
-import asyncio
 import logging
+from pathlib import Path
+
 import yaml
 
 from smartscan.utils import ColoredFormatter
-
-
+from smartscan.virtualSGM4 import VirtualSGM4
 
 if __name__ == '__main__':
 

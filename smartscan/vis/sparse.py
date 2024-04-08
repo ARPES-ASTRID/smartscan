@@ -1,14 +1,12 @@
-from typing import Callable
 from itertools import product
+from typing import Any, Callable, Literal, Sequence
 
-import numpy as np
-import matplotlib.pyplot as plt
 import matplotlib.cm as cm
-from scipy.spatial import Voronoi
-
-from typing import Literal, Sequence
-from scipy.interpolate import griddata
+import matplotlib.pyplot as plt
+import numpy as np
 import xarray as xr
+from scipy.interpolate import griddata
+from scipy.spatial import Voronoi
 
 __all__ = [
     "min_step_size",
@@ -17,7 +15,7 @@ __all__ = [
 ]
 
 
-def min_step_size(arr):
+def min_step_size(arr: np.ndarray)  -> Any:
     """Returns the minimum step size in a 1D array"""
     b = np.diff(np.sort(arr))
     return b[b > 0].min()
@@ -170,169 +168,15 @@ def voronoi_polygon_plot(
 
     if draw_points:
         point_color = colors if point_color is None else point_color
-        scatter = ax.scatter(points[:-4, 0], points[:-4, 1], color=point_color, marker="o", s=2)
+        scatter = ax.scatter(
+            points[:-4, 0], points[:-4, 1], color=point_color, marker="o", s=2
+        )
     else:
         scatter = None
     if border is not None:
         ax.set_xlim(limits[0] - box_size[0] * border, limits[1] + box_size[0] * border)
         ax.set_ylim(limits[2] - box_size[1] * border, limits[3] + box_size[1] * border)
     return ax, scatter
-
-
-##############
-# DEPRECATED #
-##############
-def voronoi_finite_polygons_2d(
-    vor: Voronoi,
-    radius: float = None,
-) -> tuple:
-    """
-    Reconstruct infinite voronoi regions in a 2D diagram to finite
-    regions.
-
-    Adapted from https://stackoverflow.com/a/20678647/8018502
-
-    Parameters
-    ----------
-    vor : Voronoi
-        Input diagram
-    radius : float, optional
-        Distance to 'points at infinity'.
-
-    Returns
-    -------
-    regions : list of tuples
-        Indices of vertices in each revised Voronoi regions.
-    vertices : list of tuples
-        Coordinates for revised Voronoi vertices. Same as coordinates
-        of input vertices, with 'points at infinity' appended to the
-        end.
-
-    """
-
-    if vor.points.shape[1] != 2:
-        raise ValueError("Requires 2D input")
-
-    new_regions = []
-    new_vertices = vor.vertices.tolist()
-
-    center = vor.points.mean(axis=0)
-    if radius is None:
-        radius = vor.points.ptp().max()
-
-    # Construct a map containing all ridges for a given point
-    all_ridges = {}
-    for (p1, p2), (v1, v2) in zip(vor.ridge_points, vor.ridge_vertices):
-        all_ridges.setdefault(p1, []).append((p2, v1, v2))
-        all_ridges.setdefault(p2, []).append((p1, v1, v2))
-
-    # Reconstruct infinite regions
-    for p1, region in enumerate(vor.point_region):
-        vertices = vor.regions[region]
-
-        if all(v >= 0 for v in vertices):
-            # finite region
-            new_regions.append(vertices)
-            continue
-
-        # reconstruct a non-finite region
-        ridges = all_ridges[p1]
-        new_region = [v for v in vertices if v >= 0]
-
-        for p2, v1, v2 in ridges:
-            if v2 < 0:
-                v1, v2 = v2, v1
-            if v1 >= 0:
-                # finite ridge: already in the region
-                continue
-
-            # Compute the missing endpoint of an infinite ridge
-
-            t = vor.points[p2] - vor.points[p1]  # tangent
-            t /= np.linalg.norm(t)
-            n = np.array([-t[1], t[0]])  # normal
-
-            midpoint = vor.points[[p1, p2]].mean(axis=0)
-            direction = np.sign(np.dot(midpoint - center, n)) * n
-            far_point = vor.vertices[v2] + direction * radius
-
-            new_region.append(len(new_vertices))
-            new_vertices.append(far_point.tolist())
-
-        # sort region counterclockwise
-        vs = np.asarray([new_vertices[v] for v in new_region])
-        c = vs.mean(axis=0)
-        angles = np.arctan2(vs[:, 1] - c[1], vs[:, 0] - c[0])
-        new_region = np.array(new_region)[np.argsort(angles)]
-
-        # finish
-        new_regions.append(new_region.tolist())
-
-    return new_regions, np.asarray(new_vertices)
-
-
-def plot_vornoi_diagram(
-    points: np.ndarray,
-    values: np.ndarray = None,
-    cmap: Callable | str = cm.viridis,
-    draw_points: bool = True,
-    draw_lines: bool = True,
-    point_color: np.ndarray | str = None,
-    line_color: np.ndarray | str = None,
-    ax: plt.Axes = None,
-    border: float | None = 0.02,
-) -> None:
-    """
-    Plot the Voronoi diagram of a set of points.
-
-    Args:
-        points: The points to plot.
-        values: The values to use for coloring the Voronoi regions.
-        cmap: The colormap to use for the Voronoi regions.
-        draw_points: Whether to draw the points.
-        draw_lines: Whether to draw the Voronoi lines.
-        point_color: The color to use for the points.
-        line_color: The color to use for the lines.
-        ax: The axis to plot on.
-        border: The border to add to the x and y limits. If None, no restriction on the
-            limits is applied.
-
-    Returns:
-        None
-    """
-    if ax is None:
-        ax = plt.gca()
-    if isinstance(cmap, str):
-        cmap = plt.get_cmap(cmap)
-    if values is None:
-        values = np.linspace(0, 1, len(points))
-    # normalize values to [0,1]
-    values = (values - np.min(values)) / (np.max(values) - np.min(values))
-    colors = cmap(values)
-
-    vor = Voronoi(points)
-    regions, vertices = voronoi_finite_polygons_2d(vor)
-
-    # colorize
-    for region, color in zip(regions, colors):
-        polygon = vertices[region]
-        edgecolor = None
-        if draw_lines:
-            edgecolor = color if line_color is None else line_color
-        ax.fill(*zip(*polygon), alpha=0.4, color=color, edgecolor=edgecolor)
-
-    if draw_points:
-        point_color = colors if point_color is None else point_color
-        ax.scatter(points[:, 0], points[:, 1], color=point_color, marker="o", s=2)
-
-    if border is not None:
-        ptp = vor.max_bound[0] - vor.min_bound[0], vor.max_bound[1] - vor.min_bound[1]
-        ax.set_xlim(
-            vor.min_bound[0] - ptp[0] * border, vor.max_bound[0] + ptp[0] * border
-        )
-        ax.set_ylim(
-            vor.min_bound[1] - ptp[0] * border, vor.max_bound[1] + ptp[0] * border
-        )
 
 
 if __name__ == "__main__":

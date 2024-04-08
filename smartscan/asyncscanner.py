@@ -1,29 +1,25 @@
-from typing import List, Any
-from xml.sax.handler import property_lexical_handler
-from numpy.typing import NDArray
-from pathlib import Path
-import logging
-from functools import partial
-import time
-import shutil
-import traceback
-
-import yaml
 import asyncio
-import numpy as np
-from .TCP import send_tcp_message
-from .gp import aquisition_functions, cost_functions, plot
-from .sgm4commands import SGM4Commands
-from .utils import closest_point_on_grid, pretty_print_time
-from . import preprocessing
-from . import tasks
-import matplotlib.pyplot as plt
+import logging
+import shutil
+import time
+import traceback
+from functools import partial
+from pathlib import Path
 
+import matplotlib.pyplot as plt
+import numpy as np
+import yaml
 from gpcam.gp_optimizer import fvGPOptimizer
 
+from . import preprocessing, tasks
+from .gp import aquisition_functions, cost_functions, plot
+from .sgm4commands import SGM4Commands
+from .TCP import send_tcp_message
+from .utils import closest_point_on_grid, pretty_print_time
+
 RELATIVE_INITIAL_POINTS = {
-    "center_2D": [[0.5,0.5]],
-    "border_2D_8":[
+    "center_2D": [[0.5, 0.5]],
+    "border_2D_8": [
         [0, 0],
         [0, 0.5],
         [0, 1],
@@ -33,7 +29,7 @@ RELATIVE_INITIAL_POINTS = {
         [1, 0],
         [0.5, 0],
     ],
-    "border_2D_16":[
+    "border_2D_16": [
         [0, 0],
         [0, 0.25],
         [0, 0.5],
@@ -51,7 +47,7 @@ RELATIVE_INITIAL_POINTS = {
         [0.5, 0],
         [0.25, 0],
     ],
-    "grid_2D_9":[
+    "grid_2D_9": [
         [0, 0],
         [0, 0.5],
         [0, 1],
@@ -62,7 +58,7 @@ RELATIVE_INITIAL_POINTS = {
         [0.5, 0],
         [0.5, 0.5],
     ],
-    "grid_2D_25":[
+    "grid_2D_25": [
         [0, 0],
         [0, 0.25],
         [0, 0.5],
@@ -89,7 +85,7 @@ RELATIVE_INITIAL_POINTS = {
         [0.75, 0.25],
         [0.75, 0.75],
     ],
-    "hexgrid_2D_19":[
+    "hexgrid_2D_19": [
         [0, 0],
         [0, 0.5],
         [0, 1],
@@ -110,7 +106,7 @@ RELATIVE_INITIAL_POINTS = {
         [0.5, 0.5],
         [0.5, 0.5],
     ],
-    "center_3D": [[0.5,0.5,0.5]],
+    "center_3D": [[0.5, 0.5, 0.5]],
     "border_3D_25": [
         [0, 0, 0],
         [0, 0, 0.5],
@@ -261,44 +257,38 @@ RELATIVE_INITIAL_POINTS = {
         [0.5, 0.5, 0.5],
         [0.5, 0.5, 0.25],
         [0.5, 0.5, 0.75],
-    ],      
+    ],
 }
 
+
 class AsyncScanManager:
-    """ AsyncScanManager class.
-    
+    """AsyncScanManager class.
+
     This class is responsible for managing the scan.
     It connects to the SGM4, fetches data, reduces it, trains the GP and asks for the next position.
-    
+
     Args:
         settings (dict | str | Path): A dictionary with the settings or a path to a yaml file with the settings.
         logger (logging.Logger, optional): A logger object. Defaults to None.
-        
+
     Attributes:
         settings (dict): A dictionary with the settings.
         logger (logging.Logger): A logger object.
         remote (SGM4Commands): An object to communicate with the SGM4.
         gp (fvGPOptimizer): The GP object.
-        positions (List): A list of positions.
-        values (List): A list of values.
+        positions (list): A list of positions.
+        values (list): A list of values.
         hyperparameter_history (dict): A dictionary with the hyperparameters history.
-        last_spectrum (NDArray[Any]): The last spectrum.
+        last_spectrum (np.ndarray): The last spectrum.
 
         _raw_data_queue (asyncio.Queue): A queue to store the raw data.
         _reduced_data_queue (asyncio.Queue): A queue to store the reduced data.
         _should_stop (bool): A flag to stop the scan.
         _replot (bool): A flag to replot the data.
-        _task_weights (NDArray[Any]): An array with the task weights.
-        
-    TODOs:
-
-        - [ ] improve the plotting.
-        - [ ] add interactive control of the scan.
-        - [ ] move initialization points to the settings file.
-        - [ ] add aks for multiple points.
-        
+        _task_weights (np.ndarray): An array with the task weights.
 
     """
+
     def __init__(
         self,
         settings: str | Path | dict = None,
@@ -320,11 +310,11 @@ class AsyncScanManager:
             self.settings_file = None
         else:
             raise ValueError("Settings must be a path to a yaml file or a dict.")
-        
-        self.logger =  logging.getLogger("AsyncScanManager")
+
+        self.logger = logging.getLogger("AsyncScanManager")
         self.logger.info("Initialized AsyncScanManager.")
 
-        self.task_labels: List[str] = list(self.settings["tasks"].keys())
+        self.task_labels: list[str] = list(self.settings["tasks"].keys())
 
         # connect to SGM4
         self.remote = SGM4Commands(
@@ -334,18 +324,18 @@ class AsyncScanManager:
         )
 
         # init data containers
-        self._all_spectra_dict = {} # dict of lists of spectra
-        self._mean_spectra_dict = {} # dict of mean of spectra per position
-        self._task_dict = {} # dict of tasks per position
+        self._all_spectra_dict = {}  # dict of lists of spectra
+        self._mean_spectra_dict = {}  # dict of mean of spectra per position
+        self._task_dict = {}  # dict of tasks per position
 
-        self._all_positions: List = [] # list of positions as measured
-        self._all_spectra: List = [] # list of spectra as measured
-        self._all_tasks: List = [] # list of tasks as measured
+        self._all_positions: list = []  # list of positions as measured
+        self._all_spectra: list = []  # list of spectra as measured
+        self._all_tasks: list = []  # list of tasks as measured
 
-        self.hyperparameter_history = {} # dict of hyperparameters history
+        self.hyperparameter_history = {}  # dict of hyperparameters history
 
-        self.last_spectrum = None # last spectrum as measured
-        self.last_asked_position = None # last position provided by the GP
+        self.last_spectrum = None  # last spectrum as measured
+        self.last_asked_position = None  # last position provided by the GP
         self.task_weights = None  # will be set by get_taks_normalization_weights
 
         # init flags
@@ -359,17 +349,9 @@ class AsyncScanManager:
 
         # properties
         self._n_dim = None
-        self.relative_initial_points = RELATIVE_INITIAL_POINTS[self.settings['scanning']['initial_points']]
-        # scan initialization points
-        # if self.n_dim == 2:
-        #     self.logger.info(f"initializing 2D scan using {self.settings['scanning']['initial_points_2D']}")
-
-        #     self.relative_initial_points = RELATIVE_INITIAL_POINTS_2D[self.settings['scanning']['initial_points_2D']]
-        # elif self.n_dim == 3:            
-        #     self.logger.info(f"initializing 3D scan using {self.settings['scanning']['initial_points_3D']}")
-        #     self.relative_initial_points = RELATIVE_INITIAL_POINTS_3D[self.settings['scanning']['initial_points_3D']]
-        # else:
-        #     self.relative_initial_points = None
+        self.relative_initial_points = RELATIVE_INITIAL_POINTS[
+            self.settings["scanning"]["initial_points"]
+        ]
 
     @property
     def filename(self) -> Path:
@@ -386,7 +368,7 @@ class AsyncScanManager:
     def n_positions(self) -> int:
         """Get the number of unique points."""
         return len(self.positions)
-    
+
     @property
     def n_spectra(self) -> int:
         """Get the number of spectra."""
@@ -408,27 +390,33 @@ class AsyncScanManager:
     @property
     def positions(self) -> np.ndarray:
         """Get the positions."""
-        if self.settings['scanning']['merge_unique_positions']:
+        if self.settings["scanning"]["merge_unique_positions"]:
             return np.array([np.array(p) for p in self._mean_spectra_dict.keys()])
         else:
             return np.array(self._all_positions, dtype=float)
-    
+
     @property
     def task_values(self) -> np.ndarray:
         """Get the values."""
-        if self.settings['scanning']['merge_unique_positions']:
+        if self.settings["scanning"]["merge_unique_positions"]:
             return np.array(list(self._task_dict.values()))
         else:
             return np.array(self._all_tasks, dtype=float)
-        
+
     @property
     def errors(self) -> np.ndarray:
         """Get the errors."""
-        if self.settings['scanning']['merge_unique_positions']:
-            base_error = self.settings['scanning']['base_error']
-            return np.array([[base_error/np.sqrt(len(d))]*len(self.task_labels) for d in self._all_spectra_dict.values()], dtype=float)
+        if self.settings["scanning"]["merge_unique_positions"]:
+            base_error = self.settings["scanning"]["base_error"]
+            return np.array(
+                [
+                    [base_error / np.sqrt(len(d))] * len(self.task_labels)
+                    for d in self._all_spectra_dict.values()
+                ],
+                dtype=float,
+            )
         else:
-            return np.ones((len(self.task_labels),len(self._all_spectra)), dtype=float)
+            return np.ones((len(self.task_labels), len(self._all_spectra)), dtype=float)
 
     async def fetch_and_reduce_loop(self) -> None:
         """Fetch data from SGM4 and reduce it."""
@@ -441,18 +429,24 @@ class AsyncScanManager:
                 data = self._preprocess(pos, data)
                 self.logger.info(f"Data received: {data.shape}")
                 t0 = time.time()
-                if self.settings['scanning']['merge_unique_positions']:
+                if self.settings["scanning"]["merge_unique_positions"]:
                     p = tuple(pos)
                     if p in self._all_spectra_dict.keys():
                         self._all_spectra_dict[p].append(data)
-                        self._mean_spectra_dict[p] = np.mean(np.array(self._all_spectra_dict[p]), axis=0)
-                        self.logger.debug(f"Pos {pos} has {len(self._all_spectra_dict[p])} spectra.")
+                        self._mean_spectra_dict[p] = np.mean(
+                            np.array(self._all_spectra_dict[p]), axis=0
+                        )
+                        self.logger.debug(
+                            f"Pos {pos} has {len(self._all_spectra_dict[p])} spectra."
+                        )
                     else:
                         self._all_spectra_dict[p] = [data]
                         self._mean_spectra_dict[p] = data
                     self._task_dict[p] = self._reduce(pos, self._mean_spectra_dict[p])
-                    self.logger.info(f'Updated data: {p}: tasks {self._task_dict[p]} | {len(self._all_spectra_dict[p])} spectra | time: {time.time()-t0:.3f} s')
-                else:    
+                    self.logger.info(
+                        f"Updated data: {p}: tasks {self._task_dict[p]} | {len(self._all_spectra_dict[p])} spectra | time: {time.time()-t0:.3f} s"
+                    )
+                else:
                     self._all_positions.append(pos)
                     self._all_spectra.append(data)
                     self._all_tasks.append(self._reduce(pos, data))
@@ -465,17 +459,16 @@ class AsyncScanManager:
     # get data from SGM4
     async def _fetch_data(
         self,
-    ) -> tuple[str, None] | tuple[NDArray[Any], NDArray[Any]] | None:
+    ) -> tuple[str, None] | tuple[np.ndarray, np.ndarray] | None:
         """Get data from SGM4.
 
         Returns:
-            tuple[str, None] | tuple[NDArray[Any], NDArray[Any]] | None:
+            tuple[str, None] | tuple[np.ndarray, np.ndarray] | None:
                 - tuple[str, None] if there was an error
-                - tuple[NDArray[Any], NDArray[Any]] if there was no error
+                - tuple[np.ndarray, np.ndarray] if there was no error
                 - None if no data was received
         """
         self.logger.debug("Fetching data...")
-        t0 = time.time()
         message: str = send_tcp_message(
             host=self.settings["TCP"]["host"],
             port=self.settings["TCP"]["port"],
@@ -497,19 +490,21 @@ class AsyncScanManager:
             case "MEASURE":
                 try:
                     n_pos = int(vals[0])
-                    pos: NDArray[Any] = np.asarray(vals[1 : n_pos + 1], dtype=float)
-                    data: NDArray[Any] = np.asarray(vals[n_pos + 1 :], dtype=float)
+                    pos: np.ndarray = np.asarray(vals[1 : n_pos + 1], dtype=float)
+                    data: np.ndarray = np.asarray(vals[n_pos + 1 :], dtype=float)
                     data = data.reshape(self.remote.spectrum_shape)
                     return pos, data
                 except ValueError as e:
-                    self.logger.critical(f'Failed interpreting received data with shape {data.shape} ')
+                    self.logger.critical(
+                        f"Failed interpreting received data with shape {data.shape}: {e} "
+                    )
             case _:
                 self.logger.warning(f"Unknown message code: {msg_code}")
                 return message, None
 
-    def _reduce(self, pos:np.ndarray, data:np.ndarray) -> np.ndarray:
-        """ reduce a single spectrum to tasks"""
-        self.logger.debug(f'Reducing data for pos {pos}...')
+    def _reduce(self, pos: np.ndarray, data: np.ndarray) -> np.ndarray:
+        """reduce a single spectrum to tasks"""
+        self.logger.debug(f"Reducing data for pos {pos}...")
         t0 = time.time()
         reduced = []
         for _, d in self.settings["tasks"].items():
@@ -528,17 +523,17 @@ class AsyncScanManager:
         self.logger.debug(f"Reduction {pos} | {reduced} | time: {time.time()-t0:.3f} s")
         return reduced
 
-    def _preprocess(self, pos: np.ndarray, data:np.ndarray) -> np.ndarray:
-        """ preprocess a single spectrum
-        
+    def _preprocess(self, pos: np.ndarray, data: np.ndarray) -> np.ndarray:
+        """preprocess a single spectrum
+
         Args:
             pos (np.ndarray): position
             data (np.ndarray): spectrum
-        
+
         Returns:
             np.ndarray: preprocessed spectrum
         """
-        self.logger.debug(f'Preprocessing data for pos {pos}...')
+        self.logger.debug(f"Preprocessing data for pos {pos}...")
         t0 = time.time()
         pp = data.copy()
         if self.settings["preprocessing"] is not None:
@@ -551,17 +546,19 @@ class AsyncScanManager:
                     pp = func(pp, **kwargs)
             self.logger.debug(
                 f"Preprocessing {pos} | shape {pp.shape} | mean : {pp.mean():.3f} ± {pp.std():.3f} | time: {time.time()-t0:.3f} s"
-            )        
+            )
         return pp
-    
-    def get_taks_normalization_weights(self, update=False) -> NDArray[Any]:
+
+    def get_taks_normalization_weights(self, update=False) -> np.ndarray:
         """Get the weights to normalize the tasks.
 
         Returns:
-            NDArray[float]: An array with the weights.
+            np.ndarray: An array with the weights.
         """
         if self.settings["scanning"]["normalize_values"] == "fixed":
-            self.task_weights = 1 / np.array(self.settings["scanning"]["fixed_normalization"])
+            self.task_weights = 1 / np.array(
+                self.settings["scanning"]["fixed_normalization"]
+            )
             self.logger.debug(f"Fixed Task weights: {self.task_weights}")
         elif self.task_weights is None or update:
             self.task_weights = 1 / self.task_values.mean(axis=0)
@@ -584,7 +581,9 @@ class AsyncScanManager:
             if self.settings["scanning"]["normalize_values"] == "always":
                 vals = vals * self.get_taks_normalization_weights(update=True)
             elif self.settings["scanning"]["normalize_values"] != "never":
-                vals = vals * self.get_taks_normalization_weights(update=update_normalization)
+                vals = vals * self.get_taks_normalization_weights(
+                    update=update_normalization
+                )
             self.logger.info(f"TELL GP | pos: {pos[-1]} | tasks: {vals[-1]}")
             self.gp.tell(pos, vals, variances=self.errors)
             self._has_new_data = False
@@ -616,14 +615,14 @@ class AsyncScanManager:
         init_hyperparameters = np.array(
             [float(n) for n in fvgp_pars.pop("init_hyperparameters")]
         )
-        if len(init_hyperparameters) != isd+2:
+        if len(init_hyperparameters) != isd + 2:
             raise ValueError(
                 f"Length mismatch between init_hyperparameters ({len(init_hyperparameters)})"
                 f"and input_space_dimension ({isd})."
             )
         self.logger.debug("Initializing GP:")
         self.logger.debug(f"\tinit_hyperparameters: {init_hyperparameters}")
-        for k,v in fvgp_pars.items():
+        for k, v in fvgp_pars.items():
             self.logger.debug(f"\t{k} = {v}")
         self.gp.init_fvgp(init_hyperparameters=init_hyperparameters, **fvgp_pars)
 
@@ -631,11 +630,13 @@ class AsyncScanManager:
 
         cost_function_dict = self.settings.get("cost_function", None)
         if cost_function_dict is not None:
-            self.logger.debug("Initializing cost function: cost_function_dict['function']")
-            
+            self.logger.debug(
+                "Initializing cost function: cost_function_dict['function']"
+            )
+
             cost_func_callable = getattr(cost_functions, cost_function_dict["function"])
             cost_func_params = cost_function_dict.get("params", {})
-            for k,v in cost_func_params.items():
+            for k, v in cost_func_params.items():
                 self.logger.debug(f"\t{k} = {v}")
             self.gp.init_cost(
                 cost_func_callable,
@@ -650,8 +651,8 @@ class AsyncScanManager:
                 return True
         return False
 
-    def was_already_measured(self, pos:np.ndarray) -> bool:
-        """ check if the given position is in the positions list."""
+    def was_already_measured(self, pos: np.ndarray) -> bool:
+        """check if the given position is in the positions list."""
         if len(self.positions) == 0:
             return False
         return np.any(np.all(np.isclose(self.positions, pos), axis=1))
@@ -667,17 +668,21 @@ class AsyncScanManager:
                 f"and hyperparameters ({len(hps_old)})."
             )
         if "bounds" not in self.hyperparameter_history.keys():
-            self.hyperparameter_history["bounds"] = hps_bounds.tolist() 
+            self.hyperparameter_history["bounds"] = hps_bounds.tolist()
         self.logger.info("Training GP:")
-        self.logger.info(f"\titeration {self.iter_counter} | {len(self.positions)} samples")
+        self.logger.info(
+            f"\titeration {self.iter_counter} | {len(self.positions)} samples"
+        )
         self.logger.debug(f"\thyperparameter_bounds: {hps_bounds}")
-        for k,v in train_pars.items():
+        for k, v in train_pars.items():
             self.logger.debug(f"\t{k} = {v}")
         self.tell_gp(update_normalization=True)
         t = time.time()
         hps_new = self.gp.train_gp(hyperparameter_bounds=hps_bounds, **train_pars)
         if not all(hps_new == self.gp.hyperparameters):
-            self.logger.warning('Something wrong with training, hyperparameters not updated?')
+            self.logger.warning(
+                "Something wrong with training, hyperparameters not updated?"
+            )
         self.logger.info(f"Training complete in {pretty_print_time(time.time()-t)} s")
         self.logger.info("Hyperparameters: ")
         for old, new, bounds in zip(hps_old, hps_new, hps_bounds):
@@ -694,7 +699,7 @@ class AsyncScanManager:
             "samples": len(self.positions),
         }
         self.save_hyperparameters()
-        
+
     def ask_gp(self) -> None:
         """Ask the GP for the next position."""
         acq_func_callable = getattr(
@@ -707,21 +712,23 @@ class AsyncScanManager:
         ask_pars = self.settings["gp"]["ask"]
 
         if self.gp.cost_function_parameters is not None:
-            self.gp.cost_function_parameters.update({
-                'prev_points': self.gp.x_data,
-                'n_dim': self.n_dim,
-                'n_tasks': self.n_tasks,
-                'axes': self.remote.axes,
-            })
+            self.gp.cost_function_parameters.update(
+                {
+                    "prev_points": self.gp.x_data,
+                    "n_dim": self.n_dim,
+                    "n_tasks": self.n_tasks,
+                    "axes": self.remote.axes,
+                }
+            )
 
         if self.last_asked_position is None:
             self.last_asked_position = self.positions[-1]
-        
+
         self.logger.debug(f"ASK: Last asked position: {self.last_asked_position}")
         next_pos = self.gp.ask(
             position=np.array(self.last_asked_position),
             acquisition_function=aqf,
-            **ask_pars
+            **ask_pars,
         )["x"]
         for point in next_pos:
             rounded_point = closest_point_on_grid(point, axes=self.remote.axes)
@@ -730,7 +737,7 @@ class AsyncScanManager:
             )
             if any([all(rounded_point == prev) for prev in self.positions]):
                 self.logger.warning(
-                f"ASK GP          | Point {rounded_point} already evaluated!"
+                    f"ASK GP          | Point {rounded_point} already evaluated!"
                 )
             self.remote.ADD_POINT(*rounded_point)
             self.last_asked_position = rounded_point
@@ -747,16 +754,22 @@ class AsyncScanManager:
         while self.relative_initial_points is not None:
             # has_new_data = self.update_data_and_positions()
             if self.n_positions > len(self.relative_initial_points):
-                self.logger.info(f'Enough positions {self.n_positions} to start GP.')
+                self.logger.info(f"Enough positions {self.n_positions} to start GP.")
                 break
-            elif all([self.was_already_measured(p) for p in self.relative_initial_points]):
-                self.logger.info('All initial points already measured. Ready to start GP.')
+            elif all(
+                [self.was_already_measured(p) for p in self.relative_initial_points]
+            ):
+                self.logger.info(
+                    "All initial points already measured. Ready to start GP."
+                )
                 break
             elif self.n_spectra > 1.2 * len(self.relative_initial_points):
-                self.logger.info(f'Enough spectra ({self.n_spectra}) to start GP.')
+                self.logger.info(f"Enough spectra ({self.n_spectra}) to start GP.")
                 break
             else:
-                self.logger.debug(f"Waiting for data to be ready for GP. {len(self.positions)}/{len(self.relative_initial_points)} ")
+                self.logger.debug(
+                    f"Waiting for data to be ready for GP. {len(self.positions)}/{len(self.relative_initial_points)} "
+                )
                 await asyncio.sleep(0.5)
         self.logger.info("Data ready for GP. Starting GP loop.")
         while not self._should_stop:
@@ -831,7 +844,9 @@ class AsyncScanManager:
             duration = self.settings["scanning"]["duration"]
             end_time = self.start_time + duration
             end_time_str = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(end_time))
-            self.logger.warning(f'Scan will end in {duration} seconds. At {end_time_str}')
+            self.logger.warning(
+                f"Scan will end in {duration} seconds. At {end_time_str}"
+            )
         if duration is not None:
             time_left = duration
             while not self._should_stop:
@@ -845,12 +860,12 @@ class AsyncScanManager:
             self.stop()
 
     async def new_plotting_loop(self) -> None:
-        """ plotting loop. refreshing the figure"""
+        """plotting loop. refreshing the figure"""
         self.logger.info("Starting plotting loop.")
         await asyncio.sleep(1)
         self.logger.info("starting plotting tool loop")
         plotter = plot.Plotter(self.settings)
-        while not self._should_stop: 
+        while not self._should_stop:
             if self._should_replot and self.n_dim == 2:
                 self._should_replot = False
                 self.logger.debug("Plotting...")
@@ -871,32 +886,31 @@ class AsyncScanManager:
         """
         self.logger.info("Starting all loops.")
         tasks = (
-                self.killer_loop(),
-                self.fetch_and_reduce_loop(),
-                self.gp_loop(),
-                self.plotting_loop(),
-            )
+            self.killer_loop(),
+            self.fetch_and_reduce_loop(),
+            self.gp_loop(),
+            self.plotting_loop(),
+        )
         try:
             await asyncio.gather(*tasks)
-                # self.training_loop(),
+        # self.training_loop(),
         except KeyboardInterrupt:
             self.logger.warning("KeyboardInterrupt. Stopping all loops.")
             for t in tasks:
                 try:
                     t.cancel()
-                except:
+                except:  # noqa
                     pass
         except Exception as e:
             self.logger.critical(f"{type(e).__name__} stopping all loops. ")
-            error_traceback = ''
+            error_traceback = ""
             for line in traceback.format_tb(e.__traceback__):
                 error_traceback += line
             self.logger.error(f"Traceback: {error_traceback}")
             self.logger.error(f"{type(e).__name__}: {e}")
-            
+
         finally:
             self.logger.info("Finalizing loop gathering: All loops finished.")
-
             self.stop()
 
     async def start(self) -> None:
@@ -905,7 +919,7 @@ class AsyncScanManager:
 
         self._ready_for_gp = False
         self._should_stop = False
-        
+
         await self.all_loops()
 
     def connect(self) -> None:
@@ -916,15 +930,15 @@ class AsyncScanManager:
             self.logger.info(
                 f"Axes: {[a.shape for a in self.remote.axes]} | Limits: {self.remote.limits} | Step size: {self.remote.step_size} "
             )
-    
+
     def init_scan(self) -> None:
         """Initialize the scan."""
-        self.logger.info(f"Initializing scan.")
+        self.logger.info("Initializing scan.")
         # TODO: add this to settings and give more options
         try:
             self.remote.START()
         except AssertionError as e:
-            self.logger.error('Assertion error when STARTing the scan: {e}')
+            self.logger.error(f"Assertion error when STARTing the scan: {e}")
             self.remote.END()
             time.sleep(10)
             self.remote.START()
@@ -944,10 +958,20 @@ class AsyncScanManager:
         self.save_settings()
 
         if self.relative_initial_points is not None:
-            self.logger.info(f"Adding {len(self.relative_initial_points)} points to scan.")
+            self.logger.info(
+                f"Adding {len(self.relative_initial_points)} points to scan."
+            )
             for pos in self.relative_initial_points:
+                if len(pos) != self.n_dim:
+                    raise ValueError(
+                        f"Length mismatch between initial points ({len(pos)})"
+                        f"and dimensions ({self.n_dim})."
+                    )
                 for i in range(self.n_dim):
-                    pos[i] = pos[i] * self.remote.limits[i][1] + (1 - pos[i]) * self.remote.limits[i][0]
+                    pos[i] = (
+                        pos[i] * self.remote.limits[i][1]
+                        + (1 - pos[i]) * self.remote.limits[i][0]
+                    )
 
                 self.remote.ADD_POINT(*pos)
                 self.last_asked_position = pos
@@ -982,7 +1006,7 @@ class AsyncScanManager:
             plt.close(self.fig)
         except Exception as e:
             self.logger.error(f"{type(e)} saving figure: {e}")
-        
+
     def save_hyperparameters(self) -> None:
         try:
             target = self.filename.parent / (self.filename.stem + "_hps.yaml")
@@ -991,10 +1015,8 @@ class AsyncScanManager:
             self.logger.info(f"Saved hyperparameters to {target}")
         except Exception as e:
             self.logger.error(f"{type(e)} saving hyperparameters: {e}")
-    
-    def save_settings(
-        self,
-    ) -> Path:
+
+    def save_settings(self) -> Path:
         """Save the settings in the data directory next to the acquired data.
 
         Args:
@@ -1019,25 +1041,27 @@ class AsyncScanManager:
                 self.logger.info(f"Settings copied to {target}")
         else:
             self.logger.critical(f"FAILED TO SAVE SETTINGS TO {target}. File exists!!")
-    
+
     def save_log_to_file(self) -> logging.Logger:
         """Setup the logger."""
         logging_filename = self.filename.with_suffix(".log")
         self.logger.info(f"Saving INFO log to {logging_filename}")
         fh = logging.FileHandler(logging_filename)
         fh.setLevel("DEBUG")
-        formatter = logging.Formatter(self.settings['logging']['formatter'])
+        formatter = logging.Formatter(self.settings["logging"]["formatter"])
         fh.setFormatter(formatter)
         self.logger.addHandler(fh)
         self.logger.info(f"Logging to file: {logging_filename}.")
-    
+
     def __del__(self) -> None:
         self.logger.critical("Deleted instance. scan stopping")
         try:
             self.finalize()
         except Exception as e:
-            self.logger.warn(f"{type(e).__name__} while deleting asyncscanner instance: {e}")
+            self.logger.warn(
+                f"{type(e).__name__} while deleting asyncscanner instance: {e}"
+            )
+
 
 if __name__ == "__main__":
-    
     pass

@@ -1,4 +1,7 @@
 
+import os
+os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
+
 from .asyncscanner import AsyncScanManager
 from .virtualSGM4 import VirtualSGM4
 

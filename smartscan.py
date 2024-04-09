@@ -244,7 +244,7 @@ if __name__ == '__main__':
     np.set_printoptions(precision=3, suppress=True)
 
     # an unsafe, unsupported, undocumented workaround :(
-    os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
+    # os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 
     if batched:
         logger.info("runnung batches")

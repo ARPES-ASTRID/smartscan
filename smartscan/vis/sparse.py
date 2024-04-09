@@ -92,7 +92,9 @@ def voronoi_polygon_plot(
     draw_points: bool = True,
     draw_lines: bool = True,
     point_color: np.ndarray | str | None = None,
+    point_size: float = 2,
     line_color: np.ndarray | str | None = None,
+    line_width: float = 0.5,
     alpha: float = 0.4,
     ax: plt.Axes | None = None,
     border: float | None = 0.02,
@@ -156,13 +158,13 @@ def voronoi_polygon_plot(
             else:
                 edgecolor = None
             ax.fill(
-                *zip(*polygon), alpha=alpha, color=colors[point_id], edgecolor=edgecolor
+                *zip(*polygon), alpha=alpha, color=colors[point_id], edgecolor=edgecolor, linewidth=line_width,
             )
 
     if draw_points:
         point_color = colors if point_color is None else point_color
         scatter = ax.scatter(
-            points[:-4, 0], points[:-4, 1], color=point_color, marker="o", s=2
+            points[:-4, 0], points[:-4, 1], color=point_color, marker="o", s=point_size
         )
     else:
         scatter = None

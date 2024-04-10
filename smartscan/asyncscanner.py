@@ -11,8 +11,7 @@ import numpy as np
 import yaml
 from gpcam.gp_optimizer import fvGPOptimizer
 
-from . import preprocessing, tasks, plot, TCP, utils, sgm4commands
-from .gp import aquisition_functions, cost_functions
+from . import TCP, gp, plot, sgm4commands, tasks, utils
 
 RELATIVE_INITIAL_POINTS = {
     "center_2D": [[0.5, 0.5]],
@@ -81,6 +80,21 @@ RELATIVE_INITIAL_POINTS = {
         [0.25, 0.75],
         [0.75, 0.25],
         [0.75, 0.75],
+    ],
+    "hexgrid_2D_13": [
+        [0, 0.5],
+        [0, 1],
+        [0.25, 0.75],
+        [0.25, 0.25],
+        [0.5, 0],
+        [0.5, 0.5],
+        [0.5, 1],
+        [0.75, 0.75],
+        [0.75, 0.25],
+        [1, 0],
+        [1, 0.5],
+        [1, 1],
+        [0, 0],
     ],
     "hexgrid_2D_19": [
         [0, 0],
@@ -263,27 +277,40 @@ class AsyncScanManager:
 
     This class is responsible for managing the scan.
     It connects to the SGM4, fetches data, reduces it, trains the GP and asks for the next position.
+    
 
     Args:
-        settings (dict | str | Path): A dictionary with the settings or a path to a yaml file with the settings.
-        logger (logging.Logger, optional): A logger object. Defaults to None.
+        settings (dict | str | Path): A dictionary with the settings or a path to a yaml file with 
+            the settings.
 
     Attributes:
-        settings (dict): A dictionary with the settings.
-        logger (logging.Logger): A logger object.
-        remote (SGM4Commands): An object to communicate with the SGM4.
         gp (fvGPOptimizer): The GP object.
-        positions (list): A list of positions.
-        values (list): A list of values.
         hyperparameter_history (dict): A dictionary with the hyperparameters history.
+        last_asked_position (np.ndarray): The last position provided by the GP.
         last_spectrum (np.ndarray): The last spectrum.
+        logger (logging.Logger): A logger object.
+        positions (list): A list of positions.
+        remote (SGM4Commands): An object to communicate with the SGM4.
+        settings (dict): A dictionary with the settings.
+        task_labels (list): A list of task labels.
+        values (list): A list of values.
 
-        _raw_data_queue (asyncio.Queue): A queue to store the raw data.
-        _reduced_data_queue (asyncio.Queue): A queue to store the reduced data.
+    Properties:
+        errors (np.ndarray): The errors associated with the values.
+        filename (Path): The file stem.
+        n_dim (int): The number of dimensions.
+        n_positions (int): The number of unique points.
+        n_spectra (int): The number of spectra.
+        n_tasks (int): The number of tasks.
+        positions (np.ndarray): The positions.
+        task_weights (np.ndarray): The task weights.
+        values (np.ndarray): The values.
+
+    Flags:
+        _has_new_data (bool): A flag to indicate new data.
+        _ready_for_gp (bool): A flag to indicate that the GP can be trained.
+        _should_replot (bool): A flag to replot the data.
         _should_stop (bool): A flag to stop the scan.
-        _replot (bool): A flag to replot the data.
-        _task_weights (np.ndarray): An array with the task weights.
-
     """
 
     def __init__(
@@ -336,13 +363,13 @@ class AsyncScanManager:
         self.task_weights = None  # will be set by get_taks_normalization_weights
 
         # init flags
-        self._should_stop: bool = False
-        self._ready_for_gp: bool = False
-        self._has_new_data: bool = False
-        self._should_replot: bool = False
+        self._should_stop: bool = False # flag to stop the scan
+        self._ready_for_gp: bool = False # flag to indicate that the GP can be trained
+        self._has_new_data: bool = False # flag to indicate new data
+        self._should_replot: bool = False # flag to replot the data
 
         # init GP
-        self.gp = None
+        self.gp = None # the GP object
 
         # properties
         self._n_dim = None
@@ -423,7 +450,6 @@ class AsyncScanManager:
             self.logger.debug("Fetching data...")
             pos, data = await self._fetch_data()
             if data is not None:
-                data = self._preprocess(pos, data)
                 self.logger.info(f"Data received: {data.shape}")
                 t0 = time.time()
                 if self.settings["scanning"]["merge_unique_positions"]:
@@ -466,7 +492,7 @@ class AsyncScanManager:
                 - None if no data was received
         """
         self.logger.debug("Fetching data...")
-        message: str = TCP.pretty_print_time(
+        message: str = TCP.send_tcp_message(
             host=self.settings["TCP"]["host"],
             port=self.settings["TCP"]["port"],
             msg="MEASURE",
@@ -519,32 +545,6 @@ class AsyncScanManager:
             )
         self.logger.debug(f"Reduction {pos} | {reduced} | time: {time.time()-t0:.3f} s")
         return reduced
-
-    def _preprocess(self, pos: np.ndarray, data: np.ndarray) -> np.ndarray:
-        """preprocess a single spectrum
-
-        Args:
-            pos (np.ndarray): position
-            data (np.ndarray): spectrum
-
-        Returns:
-            np.ndarray: preprocessed spectrum
-        """
-        self.logger.debug(f"Preprocessing data for pos {pos}...")
-        t0 = time.time()
-        pp = data.copy()
-        if self.settings["preprocessing"] is not None:
-            for _, d in self.settings["preprocessing"].items():
-                func = getattr(preprocessing, d["function"])
-                kwargs = d.get("params", {})
-                if kwargs is None:
-                    pp = func(pp)
-                else:
-                    pp = func(pp, **kwargs)
-            self.logger.debug(
-                f"Preprocessing {pos} | shape {pp.shape} | mean : {pp.mean():.3f} ± {pp.std():.3f} | time: {time.time()-t0:.3f} s"
-            )
-        return pp
 
     def get_taks_normalization_weights(self, update=False) -> np.ndarray:
         """Get the weights to normalize the tasks.
@@ -631,7 +631,7 @@ class AsyncScanManager:
                 "Initializing cost function: cost_function_dict['function']"
             )
 
-            cost_func_callable = getattr(cost_functions, cost_function_dict["function"])
+            cost_func_callable = getattr(gp.cost_functions, cost_function_dict["function"])
             cost_func_params = cost_function_dict.get("params", {})
             for k, v in cost_func_params.items():
                 self.logger.debug(f"\t{k} = {v}")
@@ -680,7 +680,9 @@ class AsyncScanManager:
             self.logger.warning(
                 "Something wrong with training, hyperparameters not updated?"
             )
-        self.logger.info(f"Training complete in {utils.pretty_print_time(time.time()-t)} s")
+        self.logger.info(
+            f"Training complete in {utils.pretty_print_time(time.time()-t)} s"
+        )
         self.logger.info("Hyperparameters: ")
         for old, new, bounds in zip(hps_old, hps_new, hps_bounds):
             change = (new - old) / old
@@ -700,7 +702,7 @@ class AsyncScanManager:
     def ask_gp(self) -> None:
         """Ask the GP for the next position."""
         acq_func_callable = getattr(
-            aquisition_functions,
+            gp.aquisition_functions,
             self.settings["acquisition_function"]["function"],
         )
         acq_func_params = self.settings["acquisition_function"]["params"]

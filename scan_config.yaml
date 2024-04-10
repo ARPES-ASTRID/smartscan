@@ -12,14 +12,8 @@ logging:
 paths:
   data: './data'
 
-core: # in milliseconds
-  n_threads: 4
-  master_clock: 500 # ms
-  fetch_data_clock: 50 # ms
-  # process_data_clock: 50 # ms
-
 plots:
-  posterior_map_shape: [50,50] #full #"auto"
+  posterior_map_shape: [50,50] #full
 
 scanning:
   max_points: 999 # 0 for unlimited
@@ -30,21 +24,8 @@ scanning:
   fixed_normalization: [1.0, 1.0] # normalization factors for each task
   merge_unique_positions: true
   base_error: 0.01 # 1% error
-  initial_points: hexgrid_2D_19 # grid_3D_27 
+  initial_points: hexgrid_2D_13 # grid_3D_27 
   
-preprocessing: 
-# list of preprocessing functions to apply to the data. 
-# Functions are chained in the order they are listed.
-  # reshape:
-  #   function: reshape 
-  #   params: 
-  #     shape: [] # parameters of the function
-  # roi:
-  #   function: roi # name of the function found in gp/preprocessing.py
-  #   params: 
-  #     x_lim: [50,190] # parameters of the function  
-  #     y_lim: [10,-10]
-
 tasks: # list of tasks to which to reduce the data
   # laplace_filter:
   #   function: laplace_filter
@@ -89,16 +70,16 @@ gp:
     output_space_dimension: 1 # just leave it at 1
 
   fvgp:
-    init_hyperparameters: [
-      1_000_000, 
+    init_hyperparameters: [ # initial hyperparameters for the GP, should be 2 + parameter dimensions
+      1_000_000, # overall amplitude
       # 100, 
       100, 
       100, 
-      0.5
+      0.5 # lengthscale along tasks
     ]
     compute_device: cpu # cpu or cuda:0
-    gp_kernel_function: null
-    gp_mean_function: null
+    gp_kernel_function: null # default is Matern Kernel
+    gp_mean_function: null 
     use_inv: false
     ram_economy: true # shouldnt really do anything without use_inv
 

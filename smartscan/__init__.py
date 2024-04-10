@@ -1,6 +1,9 @@
+import os
 
-from .virtualSGM4 import VirtualSGM4
-from .asyncscanner import AsyncScanManager
+# Fix for Intel OpenMP runtime error on Windows
+os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 
-__version__ = "0.4.1"
-__all__ = [AsyncScanManager, VirtualSGM4]
+from smartscan.smartscan import run  # noqa: F402
+
+__all__ = ["run"]
+__version__ = "0.5.0"

@@ -1,10 +1,10 @@
-from typing import Any, List, Tuple
 import logging
+from itertools import product
+from pathlib import Path
+from typing import Any, List, Tuple
+
 import numpy as np
 from numpy.typing import NDArray
-from pathlib import Path
-
-from itertools import product
 
 from .TCP import send_tcp_message
 
@@ -50,7 +50,6 @@ class SGM4Commands:
         self._filename = None
         self._current_pos = None
         self._all_positions = None
-        
 
     @property
     def filename(self) -> Path:
@@ -233,7 +232,9 @@ class SGM4Commands:
         print(response)
         split = response.split(" ")
         assert split[0] == "LIMITS", f"Expected LIMITS, got {split[0]}"
-        limits = [tuple([float(l) for l in lim.split(",")]) for lim in split[1:]]
+        limits = [
+            tuple([float(lim) for lim in limit.split(",")]) for limit in split[1:]
+        ]
         assert (
             len(limits) == self.ndim
         ), f"Expected {self._ndim} limits, got {len(limits)}"
@@ -330,7 +331,7 @@ class SGM4Commands:
         assert response == "START", f"Expected START, got {response}"
         return True
 
-    def END(self)-> str:
+    def END(self) -> str:
         """End the scan after completeing the current queue
 
         Returns:

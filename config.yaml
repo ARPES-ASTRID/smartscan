@@ -9,42 +9,20 @@ logging:
   directory: null
   formatter: '%(asctime)s | %(name)s | %(levelname)-8s | %(message)s'
 
-paths:
-  data: './data'
-
-core: # in milliseconds
-  n_threads: 4
-  master_clock: 500 # ms
-  fetch_data_clock: 50 # ms
-  # process_data_clock: 50 # ms
-
 plots:
-  posterior_map_shape: [50,50] #full #"auto"
+  posterior_map_shape: [50,50] #full
 
 scanning:
   max_points: 999 # 0 for unlimited
-  duration: 7200
+  duration: 7200 # in seconds
   train_at: [10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000]
   train_every: 0 # 0 for no training
   normalize_values: training # one of init, training, always, fixed or never
   fixed_normalization: [1.0, 1.0] # normalization factors for each task
   merge_unique_positions: true
   base_error: 0.01 # 1% error
-  initial_points: hexgrid_2D_19 # grid_3D_27 
+  initial_points: hexgrid_2D_13 # grid_3D_27 
   
-preprocessing: 
-# list of preprocessing functions to apply to the data. 
-# Functions are chained in the order they are listed.
-  # reshape:
-  #   function: reshape 
-  #   params: 
-  #     shape: [] # parameters of the function
-  # roi:
-  #   function: roi # name of the function found in gp/preprocessing.py
-  #   params: 
-  #     x_lim: [50,190] # parameters of the function  
-  #     y_lim: [10,-10]
-
 tasks: # list of tasks to which to reduce the data
   # laplace_filter:
   #   function: laplace_filter
@@ -79,12 +57,9 @@ acquisition_function:
     c: 0 # covariance weight
 
 cost_function:
-  function: cost_per_axis # manhattan_avoid_repetition # name of the function found in gp/cost_functions.py
+  function: cost_per_axis # name of the function found in gp/cost_functions.py
   params: 
     speed: [300,300] # um/s, 0 speed is infinite
-    # dwell_time: 2 # seconds
-    # dead_time: 0.1 # seconds
-    # min_distance: 4.99 # This should always be just below the step size of the scanner
     weight: [100,100] # 0.01 # weight of the cost function
 
 gp:
@@ -92,16 +67,16 @@ gp:
     output_space_dimension: 1 # just leave it at 1
 
   fvgp:
-    init_hyperparameters: [
-      1_000_000, 
+    init_hyperparameters: [ # initial hyperparameters for the GP, should be 2 + parameter dimensions
+      1_000_000, # overall amplitude
       # 100, 
       100, 
       100, 
-      0.5
+      0.5 # lengthscale along tasks
     ]
     compute_device: cpu # cpu or cuda:0
-    gp_kernel_function: null
-    gp_mean_function: null
+    gp_kernel_function: null # default is Matern Kernel
+    gp_mean_function: null 
     use_inv: false
     ram_economy: true # shouldnt really do anything without use_inv
 
@@ -124,5 +99,10 @@ gp:
     pop_size: 20 # population size for global optimization
     max_iter: 10 # maximum number of iterations for global optimization
     tol: 0.000001 # tolerance for global optimization
-    # x0: all # positions where to evaluate the acquisition function
 
+simulator:
+  source_file: D:\data\ARPESdatabase\maps\SGM4\MBT_C_62 # Z006_35_0.h5 # Cleave3_52 
+  save_dir: data
+  save_to_file: true
+  simulate_times: True
+  dwell_time: 1 # seconds

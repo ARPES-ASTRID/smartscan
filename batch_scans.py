@@ -34,7 +34,7 @@ def batches(settings: dict | str) -> None:
     settings["acquisition_function"]["params"]["a"] = 3
     run(settings)
     logger.info(f"Finished batch run #{i}")
-    logger.info(f"Waiting for 60 seconds")
+    logger.info("Waiting for 60 seconds")
     time.sleep(60)
 
     # ~~ BATCH ~~
@@ -43,7 +43,7 @@ def batches(settings: dict | str) -> None:
     settings["acquisition_function"]["params"]["a"] = 1
     run(settings)
     logger.info(f"Finished batch run #{i}")
-    logger.info(f"Waiting for 60 seconds")
+    logger.info("Waiting for 60 seconds")
     time.sleep(60)
 
     # ~~ BATCH ~~
@@ -52,7 +52,7 @@ def batches(settings: dict | str) -> None:
     settings["acquisition_function"]["params"]["a"] = 10
     run(settings)
     logger.info(f"Finished batch run #{i}")
-    logger.info(f"Waiting for 60 seconds")
+    logger.info("Waiting for 60 seconds")
     time.sleep(60)
 
 

@@ -109,6 +109,7 @@ class VirtualSGM4(TCPServer):
 
         Args:
             filename: Name of the file to read.
+            scan_name: Name of the scan.
         """
         self.source_file = SGM4FileManager(filename)
         if scan_name is None:
@@ -412,24 +413,24 @@ class VirtualSGM4(TCPServer):
 
     def CLEAR(self) -> str:
         self.input_queue.clear()
-        return f"CLEAR"
+        return "CLEAR"
 
     def SCAN(self) -> str:
         self.status = "SCANNING"
-        return f"SCAN"
+        return "SCAN"
 
     def START(self) -> str:
         self.status = "READY"
-        return f"START"
+        return "START"
 
     def END(self) -> str:
         self.wait_at_queue_empty = False
-        return f"END {self.input_queue.qsize()}"
+        return F"END {self.input_queue.qsize()}"
 
     def ABORT(self) -> str:
         self.status = "ABORTED"
         # TODO: stop the measurement loop
-        return f"ABORT"
+        return "ABORT"
 
     def PAUSE(self) -> str:
         self.status = "PAUSED" if self.status == "SCANNING" else "SCANNING"
@@ -465,7 +466,7 @@ class VirtualSGM4(TCPServer):
     def MEASURE(self) -> str:
         # pos, data = self.acquire_data(changed = [False,False])
         if self.output_queue.empty():
-            return f"NO_DATA"
+            return "NO_DATA"
         pos, data = self.output_queue.get_nowait()
         pos_str = " ".join([str(v) for v in pos])
         data_str = " ".join(

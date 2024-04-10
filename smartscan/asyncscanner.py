@@ -11,11 +11,8 @@ import numpy as np
 import yaml
 from gpcam.gp_optimizer import fvGPOptimizer
 
-from . import preprocessing, tasks
-from .gp import aquisition_functions, cost_functions, plot
-from .sgm4commands import SGM4Commands
-from .TCP import send_tcp_message
-from .utils import closest_point_on_grid, pretty_print_time
+from . import preprocessing, tasks, plot, TCP, utils, sgm4commands
+from .gp import aquisition_functions, cost_functions
 
 RELATIVE_INITIAL_POINTS = {
     "center_2D": [[0.5, 0.5]],
@@ -317,7 +314,7 @@ class AsyncScanManager:
         self.task_labels: list[str] = list(self.settings["tasks"].keys())
 
         # connect to SGM4
-        self.remote = SGM4Commands(
+        self.remote = sgm4commands.SGM4Commands(
             self.settings["TCP"]["host"],
             self.settings["TCP"]["port"],
             buffer_size=self.settings["TCP"]["buffer_size"],
@@ -469,7 +466,7 @@ class AsyncScanManager:
                 - None if no data was received
         """
         self.logger.debug("Fetching data...")
-        message: str = send_tcp_message(
+        message: str = TCP.pretty_print_time(
             host=self.settings["TCP"]["host"],
             port=self.settings["TCP"]["port"],
             msg="MEASURE",
@@ -683,7 +680,7 @@ class AsyncScanManager:
             self.logger.warning(
                 "Something wrong with training, hyperparameters not updated?"
             )
-        self.logger.info(f"Training complete in {pretty_print_time(time.time()-t)} s")
+        self.logger.info(f"Training complete in {utils.pretty_print_time(time.time()-t)} s")
         self.logger.info("Hyperparameters: ")
         for old, new, bounds in zip(hps_old, hps_new, hps_bounds):
             change = (new - old) / old
@@ -731,7 +728,7 @@ class AsyncScanManager:
             **ask_pars,
         )["x"]
         for point in next_pos:
-            rounded_point = closest_point_on_grid(point, axes=self.remote.axes)
+            rounded_point = utils.closest_point_on_grid(point, axes=self.remote.axes)
             self.logger.info(
                 f"ASK GP          | Adding {rounded_point} to scan. rounded from {point}"
             )
@@ -818,7 +815,7 @@ class AsyncScanManager:
             if self._should_replot and self.n_dim == 2:
                 self._should_replot = False
                 self.logger.debug("Plotting...")
-                fig, aqf = plot.plot_acqui_f(
+                fig, aqf = plot.plot_aqf_panel(
                     gp=self.gp,
                     fig=self.fig,
                     pos=np.asarray(self.positions),

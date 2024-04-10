@@ -15,6 +15,8 @@ def batches(settings: dict | str) -> None:
     and logger are passed to the function.
     Each batch is  started by calling the `run` function with the settings dictionary,
     modified for the specific batch.
+    After each run is finished, the function waits for 60 seconds before starting the next.
+    This ensures the system has enough time to reset and the data is saved properly.
 
     Args:
         settings (dict | str): The settings dictionary or the path to the settings file.
@@ -23,191 +25,35 @@ def batches(settings: dict | str) -> None:
     if isinstance(settings, str):
         with open(settings, "r") as file:
             settings = yaml.safe_load(file)
-
+    i = 0
     # ~~~ SETUP BATCHES BELOW ~~~
-    i = 1
-    tasks = {
-        "laplace_filter": {
-            "function": "laplace_filter",
-            "params": {"sigma": 2, "roi": [[145, 190], [10, 140]]},
-        },
-        "curvature": {
-            "function": "curvature",
-            "params": {
-                "bw": 5,
-                "c1": 0.001,
-                "c2": 0.001,
-                "w": 1,
-                "roi": [[145, 190], [10, 140]],
-            },
-        },
-    }
-    rois = [[[145, 190], [10, 140]], [[45, 190], [10, 140]]]
 
-    for roi in rois:
-        logger.info(f"Starting batch run #{i}")
-        settings["scanning"]["n_points"] = 499
-        settings["scanning"]["duration"] = 3600 / 2
+    # ~~ BATCH ~~
+    i += 1
+    settings["cost_function"]["params"]["weight"] = 1
+    settings["acquisition_function"]["params"]["a"] = 3
+    run(settings)
+    logger.info(f"Finished batch run #{i}")
+    logger.info(f"Waiting for 60 seconds")
+    time.sleep(60)
 
-        settings["cost_function"]["params"]["weight"] = 1
-        settings["acquisition_function"]["params"]["a"] = 3
+    # ~~ BATCH ~~
+    i += 1
+    settings["cost_function"]["params"]["weight"] = 1
+    settings["acquisition_function"]["params"]["a"] = 1
+    run(settings)
+    logger.info(f"Finished batch run #{i}")
+    logger.info(f"Waiting for 60 seconds")
+    time.sleep(60)
 
-        settings["tasks"] = {
-            "mean": {
-                "function": "mean",
-                "params": {
-                    "roi": roi,
-                },
-            },
-            "curvature": {
-                "function": "curvature",
-                "params": {"bw": 5, "c1": 0.001, "c2": 0.001, "w": 1, "roi": roi},
-            },
-        }
-
-        print(f"\n\n\n")
-        logger.info(f"\ttasks: {settings['tasks'].keys()}")
-        logger.info(f"\troi: {settings['tasks']['mean']['params']['roi']}")
-        logger.info(f"\ta: {settings['acquisition_function']['params']['a']}")
-        logger.info(f"\tcost weight: {settings['cost_function']['params']['weight']}")
-        print("\n\n\n")
-        run(settings)
-        logger.info(f"Finished batch run #{i}")
-        logger.info(f"Waiting for 30 seconds")
-        time.sleep(60)
-        i += 1
-
-        # ~~~RUN ~~~
-        logger.info(f"Starting batch run #{i}")
-        settings["scanning"]["n_points"] = 499
-        settings["scanning"]["duration"] = 3600 / 2
-
-        settings["cost_function"]["params"]["weight"] = 10
-        settings["acquisition_function"]["params"]["a"] = 3
-
-        settings["tasks"] = {
-            "mean": {
-                "function": "mean",
-                "params": {
-                    "roi": roi,
-                },
-            },
-            "curvature": {
-                "function": "curvature",
-                "params": {"bw": 5, "c1": 0.001, "c2": 0.001, "w": 1, "roi": roi},
-            },
-        }
-
-        print(f"\n\n\n")
-        logger.info(f"\ttasks: {settings['tasks'].keys()}")
-        logger.info(f"\troi: {settings['tasks']['mean']['params']['roi']}")
-        logger.info(f"\ta: {settings['acquisition_function']['params']['a']}")
-        logger.info(f"\tcost weight: {settings['cost_function']['params']['weight']}")
-        print("\n\n\n")
-        run(settings)
-        logger.info(f"Finished batch run #{i}")
-        logger.info(f"Waiting for 30 seconds")
-        time.sleep(60)
-        i += 1
-
-        # ~~~RUN ~~~
-        logger.info(f"Starting batch run #{i}")
-        settings["scanning"]["n_points"] = 499
-        settings["scanning"]["duration"] = 3600 / 2
-
-        settings["cost_function"]["params"]["weight"] = 50
-        settings["acquisition_function"]["params"]["a"] = 3
-
-        settings["tasks"] = {
-            "mean": {
-                "function": "mean",
-                "params": {
-                    "roi": roi,
-                },
-            },
-            "curvature": {
-                "function": "curvature",
-                "params": {"bw": 5, "c1": 0.001, "c2": 0.001, "w": 1, "roi": roi},
-            },
-        }
-
-        print(f"\n\n\n")
-        logger.info(f"\ttasks: {settings['tasks'].keys()}")
-        logger.info(f"\troi: {settings['tasks']['mean']['params']['roi']}")
-        logger.info(f"\ta: {settings['acquisition_function']['params']['a']}")
-        logger.info(f"\tcost weight: {settings['cost_function']['params']['weight']}")
-        print("\n\n\n")
-        run(settings)
-        logger.info(f"Finished batch run #{i}")
-        logger.info(f"Waiting for 30 seconds")
-        time.sleep(60)
-        i += 1
-
-        # ~~~RUN ~~~
-        logger.info(f"Starting batch run #{i}")
-        settings["scanning"]["n_points"] = 499
-        settings["scanning"]["duration"] = 3600 / 2
-
-        settings["cost_function"]["params"]["weight"] = 50
-        settings["acquisition_function"]["params"]["a"] = 3
-
-        settings["tasks"] = {
-            "mean": {
-                "function": "mean",
-                "params": {
-                    "roi": roi,
-                },
-            },
-            "curvature": {
-                "function": "curvature",
-                "params": {"bw": 5, "c1": 0.001, "c2": 0.001, "w": 1, "roi": roi},
-            },
-        }
-
-        print(f"\n\n\n")
-        logger.info(f"\ttasks: {settings['tasks'].keys()}")
-        logger.info(f"\troi: {settings['tasks']['mean']['params']['roi']}")
-        logger.info(f"\ta: {settings['acquisition_function']['params']['a']}")
-        logger.info(f"\tcost weight: {settings['cost_function']['params']['weight']}")
-        print("\n\n\n")
-        run(settings)
-        logger.info(f"Finished batch run #{i}")
-        logger.info(f"Waiting for 30 seconds")
-        time.sleep(60)
-        i += 1
-
-        # ~~~RUN ~~~
-        logger.info(f"Starting batch run #{i}")
-        settings["scanning"]["n_points"] = 499
-        settings["scanning"]["duration"] = 3600 / 2
-
-        settings["cost_function"]["params"]["weight"] = 100
-        settings["acquisition_function"]["params"]["a"] = 3
-
-        settings["tasks"] = {
-            "mean": {
-                "function": "mean",
-                "params": {
-                    "roi": roi,
-                },
-            },
-            "curvature": {
-                "function": "curvature",
-                "params": {"bw": 5, "c1": 0.001, "c2": 0.001, "w": 1, "roi": roi},
-            },
-        }
-
-        print(f"\n\n\n")
-        logger.info(f"\ttasks: {settings['tasks'].keys()}")
-        logger.info(f"\troi: {settings['tasks']['mean']['params']['roi']}")
-        logger.info(f"\ta: {settings['acquisition_function']['params']['a']}")
-        logger.info(f"\tcost weight: {settings['cost_function']['params']['weight']}")
-        print("\n\n\n")
-        run(settings)
-        logger.info(f"Finished batch run #{i}")
-        logger.info(f"Waiting for 30 seconds")
-        time.sleep(60)
-        i += 1
+    # ~~ BATCH ~~
+    i += 1
+    settings["cost_function"]["params"]["weight"] = 10
+    settings["acquisition_function"]["params"]["a"] = 10
+    run(settings)
+    logger.info(f"Finished batch run #{i}")
+    logger.info(f"Waiting for 60 seconds")
+    time.sleep(60)
 
 
 if __name__ == "__main__":

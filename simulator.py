@@ -4,7 +4,7 @@ from pathlib import Path
 import yaml
 
 from smartscan.utils import ColoredFormatter
-from smartscan.virtualSGM4 import VirtualSGM4
+from smartscan.simulator import VirtualSGM4
 
 if __name__ == '__main__':
 

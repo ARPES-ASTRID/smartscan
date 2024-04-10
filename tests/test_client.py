@@ -2,7 +2,7 @@ from typing import Tuple
 import asyncio
 import pytest
 from unittest import mock
-from smartscan.TCP import TCPClient
+from smartscan.TCP import Client
 from asyncio.streams import StreamReader, StreamWriter
 
 
@@ -28,7 +28,7 @@ def mock_server_connection(event_loop) -> Tuple[StreamReader, StreamWriter]:
         await asyncio.sleep(0.1)
         return reader, writer
 
-    client = TCPClient('localhost', 1234)
+    client = Client('localhost', 1234)
 
     with mock.patch.object(asyncio, 'open_connection', side_effect=mock_connect):
         event_loop.run_until_complete(client.connect())
@@ -51,7 +51,7 @@ async def test_send_message(mock_server_connection) -> None:
     writer.drain.return_value.set_result(None)
     reader.read.return_value = (f'Received message "{message}"\n').encode('utf-8')
 
-    client = TCPClient('localhost', 1234)
+    client = Client('localhost', 1234)
     await client.send_message(message)
 
     writer.write.assert_called_once_with(message.encode('utf-8'))
@@ -69,7 +69,7 @@ async def test_receive_message(mock_server_connection) -> None:
     message = 'Hello, client!'
     reader.read.return_value = (f'{message}\n').encode('utf-8')
 
-    client = TCPClient('localhost', 1234)
+    client = Client('localhost', 1234)
     received_message = await client.receive_message()
 
     reader.read.assert_called_once_with(1024)
@@ -83,7 +83,7 @@ async def test_connect_and_close(mock_server_connection) -> None:
     """
     reader, writer = mock_server_connection
 
-    client = TCPClient('localhost', 1234)
+    client = Client('localhost', 1234)
     await client.connect()
 
     asyncio.sleep.assert_called_once_with(0.1)

@@ -1,3 +1,4 @@
+import argparse
 import asyncio
 import itertools
 import logging
@@ -8,13 +9,14 @@ from typing import Any, Callable, Sequence
 
 import h5py
 import numpy as np
+import yaml
 from tqdm.auto import tqdm, trange
 
-import smartscan.tasks as processing
-from smartscan.TCP import TCPServer
+# import smartscan.tasks as processing
+from smartscan import TCP, tasks, utils
 
 
-class VirtualSGM4(TCPServer):
+class VirtualSGM4(TCP.Server):
     MOTOR_SPEED = 300  # um/s
 
     def __init__(
@@ -111,6 +113,7 @@ class VirtualSGM4(TCPServer):
             filename: Name of the file to read.
             scan_name: Name of the scan.
         """
+        self.logger.info(f"Initializing scan from file {filename}")
         self.source_file = SGM4FileManager(filename)
         if scan_name is None:
             scan_name = Path(filename).stem + "_virtual"
@@ -135,6 +138,7 @@ class VirtualSGM4(TCPServer):
                 c[l // 2] for c, l in zip(self.coords.values(), self.map_shape)
             ]
         self.input_queue.put(self.current_pos)
+        logger.debug(f"Initialized scan from file {filename}")
 
     def nearest_position_on_grid(self, position: Sequence[float]) -> tuple[int]:
         """Find nearest position in the grid.
@@ -187,8 +191,8 @@ class VirtualSGM4(TCPServer):
 
     def create_file(
         self,
-        filename: str | Path = None,
-        filedir: str | Path = "../data",
+        file_name: str | Path = None,
+        file_dir: str | Path = None,
         mode="x",
     ) -> None:
         """Create the file for the scan.
@@ -199,16 +203,30 @@ class VirtualSGM4(TCPServer):
         Raises:
             FileExistsError: If the file already exists.
         """
+        if file_name is None:
+            file_stem = self.source_file.filename.stem + "_simulation"
+        else:
+            file_stem = Path(file_name).stem
 
-        if filename is not None:
-            self.target_file_name = Path(filename).with_suffix(".h5")
-        if filedir is not None:
-            self.target_file_name = Path(filedir) / self.target_file_name
+        file_dir = file_dir or settings['simulator']['save_dir']
+        file_dir = Path(file_dir)
+        file_dir.mkdir(parents=True, exist_ok=True)
+
+        i=0
+        while True:
+            file_name = file_dir / f'{file_stem}_{i:03.0f}.h5'
+            if not file_name.exists():
+                break
+            else:
+                i += 1
+        self.target_file_name = Path(file_name)
+
         if self.target_file_name.exists():
-            raise FileExistsError(f"File {self.target_file_name} already exists.")
+            raise FileExistsError(f"File {self.target_file_name.absolute()} already exists.")
         else:
             self.target_file_name.parent.mkdir(parents=True, exist_ok=True)
-        self.logger.info(f"Creating file {self.target_file_name}")
+
+        self.logger.info(f"Creating file {self.target_file_name.absolute()}")
         self.file = h5py.File(self.target_file_name, mode=mode, libver="latest")
 
         self.file.create_dataset(
@@ -702,7 +720,7 @@ class SGM4FileManager:
         processed = data
         for f in pipe:
             if isinstance(f, str):
-                processed = getattr(processing, f)(processed)
+                processed = getattr(tasks, f)(processed)
             else:
                 processed = f(processed)
         return processed
@@ -729,9 +747,9 @@ class SGM4FileManager:
         elif callable(func):
             pass
         elif hasattr(
-            processing, func
+            tasks, func
         ):  # check if function is a function in the reduce module
-            func = getattr(processing, func)
+            func = getattr(tasks, func)
         else:
             raise ValueError(
                 "Function is not a numpy function nor a callable nor a "
@@ -958,4 +976,57 @@ class SGM4FileManager:
 
 
 if __name__ == "__main__":
-    pass
+
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "-c", "--config", default="config.yaml", help="select a configuration file"
+    )
+    parser.add_argument(
+        "-l",
+        "--log",
+        default=None,
+        help="set the logging level",
+        choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+    )
+    parser.add_argument(
+        "-f", "--file", default=None, help="set the filename to read from"
+    )
+    
+    args = parser.parse_args()
+
+    with open( args.config, 'r') as f:
+        settings = yaml.safe_load(f)
+
+    source_file = args.file or settings['simulator']['source_file']
+    source_file = Path(source_file).with_suffix('.h5')
+    if not source_file.exists():
+        raise FileNotFoundError(f'File {source_file.absolute()} does not exist!')
+    
+    # init logger
+    logger = logging.getLogger('virtualSGM4')
+    log_level = args.log or settings['logging']['level']
+    logger.setLevel(log_level.upper())
+    formatter = utils.ColoredFormatter(settings['logging']['formatter'])
+
+    sh = logging.StreamHandler()
+    sh.setLevel(log_level.upper())
+    sh.setFormatter(formatter)
+    logger.addHandler(sh)
+
+    logger.info(f'Starting simulator based on {source_file.stem}')
+    logger.info(f'Settings file: {args.config}')
+
+    # init virtual SGM4
+    vm = VirtualSGM4(
+        'localhost', 
+        54333, 
+        logger=logger,
+        simulate_times=settings['simulator']['simulate_times'],
+        save_to_file=settings['simulator']['save_to_file'],
+        dwell_time=settings['simulator']['dwell_time'],
+    )
+    vm.init_scan_from_file(filename=source_file)
+    vm.create_file()
+    vm.run()
+    logger.info('All done. Quitting...')

@@ -95,7 +95,7 @@ def send_tcp_message(
     return data.strip("\r\n")
 
 
-class TCPServer:
+class Server:
     def __init__(
         self,
         host: str,
@@ -205,7 +205,7 @@ class TCPServer:
             loop.close()
 
 
-class TCPClient:
+class Client:
     def __init__(
         self,
         host: str,
@@ -286,5 +286,5 @@ class TCPClient:
 
 
 if __name__ == "__main__":
-    server = TCPServer("localhost", 12345)
+    server = Server("localhost", 12345)
     server.run()

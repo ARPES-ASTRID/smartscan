@@ -9,9 +9,6 @@ logging:
   directory: null
   formatter: '%(asctime)s | %(name)s | %(levelname)-8s | %(message)s'
 
-paths:
-  data: './data'
-
 plots:
   posterior_map_shape: [50,50] #full
 
@@ -103,3 +100,9 @@ gp:
     max_iter: 10 # maximum number of iterations for global optimization
     tol: 0.000001 # tolerance for global optimization
 
+simulator:
+  source_file: D:\data\ARPESdatabase\maps\SGM4\MBT_C_62 # Z006_35_0.h5 # Cleave3_52 
+  save_dir: data
+  save_to_file: true
+  simulate_times: True
+  dwell_time: 1 # seconds

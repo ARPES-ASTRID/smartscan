@@ -1,4 +1,5 @@
 import asyncio
+import argparse
 import logging
 import shutil
 import time
@@ -272,15 +273,44 @@ RELATIVE_INITIAL_POINTS = {
 }
 
 
-class AsyncScanManager:
+def run(settings: dict) -> None:
+    """Run the scan asynchronously.
+
+    Args:
+        settings (dict): A dictionary with the settings.
+    """
+    # init logger
+    logger = logging.getLogger(__name__)
+    # init scan manager
+    scan_manager = SmartScan(settings=settings)
+    # start scan manager
+    try:
+        loop = asyncio.get_event_loop()
+        loop.run_until_complete(scan_manager.start())
+    except KeyboardInterrupt:
+        loop.run_forever()
+        loop.run_until_complete(scan_manager.stop())
+        logger.warning("Terminated scan from keyboard")
+    except Exception as e:
+        logger.critical(
+            f"Scan manager stopped due to {type(e).__name__}: {e} {traceback.format_exc()}"
+        )
+        logger.exception(e)
+        loop.run_until_complete(scan_manager.stop())
+
+    logger.info("Scan manager stopped.")
+    logger.info("Scan finished")
+
+
+class SmartScan:
     """AsyncScanManager class.
 
     This class is responsible for managing the scan.
     It connects to the SGM4, fetches data, reduces it, trains the GP and asks for the next position.
-    
+
 
     Args:
-        settings (dict | str | Path): A dictionary with the settings or a path to a yaml file with 
+        settings (dict | str | Path): A dictionary with the settings or a path to a yaml file with
             the settings.
 
     Attributes:
@@ -335,7 +365,7 @@ class AsyncScanManager:
         else:
             raise ValueError("Settings must be a path to a yaml file or a dict.")
 
-        self.logger = logging.getLogger("AsyncScanManager")
+        self.logger = logging.getLogger("SmartScan")
         self.logger.info("Initialized AsyncScanManager.")
 
         self.task_labels: list[str] = list(self.settings["tasks"].keys())
@@ -363,13 +393,13 @@ class AsyncScanManager:
         self.task_weights = None  # will be set by get_taks_normalization_weights
 
         # init flags
-        self._should_stop: bool = False # flag to stop the scan
-        self._ready_for_gp: bool = False # flag to indicate that the GP can be trained
-        self._has_new_data: bool = False # flag to indicate new data
-        self._should_replot: bool = False # flag to replot the data
+        self._should_stop: bool = False  # flag to stop the scan
+        self._ready_for_gp: bool = False  # flag to indicate that the GP can be trained
+        self._has_new_data: bool = False  # flag to indicate new data
+        self._should_replot: bool = False  # flag to replot the data
 
         # init GP
-        self.gp = None # the GP object
+        self.gp = None  # the GP object
 
         # properties
         self._n_dim = None
@@ -631,7 +661,9 @@ class AsyncScanManager:
                 "Initializing cost function: cost_function_dict['function']"
             )
 
-            cost_func_callable = getattr(gp.cost_functions, cost_function_dict["function"])
+            cost_func_callable = getattr(
+                gp.cost_functions, cost_function_dict["function"]
+            )
             cost_func_params = cost_function_dict.get("params", {})
             for k, v in cost_func_params.items():
                 self.logger.debug(f"\t{k} = {v}")
@@ -1062,5 +1094,51 @@ class AsyncScanManager:
             )
 
 
+def main() -> None:
+    """Main function."""
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "-c", "--config", default="config.yaml", help="select a configuration file"
+    )
+    parser.add_argument(
+        "-l",
+        "--log",
+        default=None,
+        help="set the logging level",
+        choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+    )
+
+    args = parser.parse_args()
+
+    with open(args.config) as f:
+        settings = yaml.load(f, Loader=yaml.FullLoader)
+    log_level = args.log or settings["logging"]["level"]
+    log_level = log_level.upper()
+    logging.root.setLevel(log_level)
+    formatter = utils.ColoredFormatter(settings["logging"]["formatter"])
+
+    sh = logging.StreamHandler()
+    sh.setLevel(log_level)
+    sh.setFormatter(formatter)
+    logging.root.addHandler(sh)
+
+    logger = logging.getLogger(__name__)
+
+    logger.info(f"Starting scan with settings from {args.config}")
+
+    # suppress user warnings
+    import warnings
+
+    warnings.simplefilter("ignore", UserWarning)
+
+    # numpy compact printing
+    np.set_printoptions(precision=3, suppress=True)
+
+    run(settings)
+
+    asyncio.get_event_loop().stop()
+    logger.info("Closed event loop")
+
+
 if __name__ == "__main__":
-    pass
+    main()

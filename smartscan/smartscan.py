@@ -1094,8 +1094,13 @@ class SmartScan:
             )
 
 
-def main() -> None:
-    """Main function."""
+def main(run_func: callable | None = None) -> None:
+    """ Main function to run the smart scan.
+    
+    Args:
+        run_func (callable | None): A callable function to run. Defaults to None.
+            This function should take a dictionary with the settings as input.
+    """
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "-c", "--config", default="config.yaml", help="select a configuration file"
@@ -1134,7 +1139,11 @@ def main() -> None:
     # numpy compact printing
     np.set_printoptions(precision=3, suppress=True)
 
-    run(settings)
+
+    if run_func is not None:
+        run_func(settings)
+    else:
+        run(settings)
 
     asyncio.get_event_loop().stop()
     logger.info("Closed event loop")

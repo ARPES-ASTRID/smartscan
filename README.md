@@ -1,3 +1,4 @@
+
 # smartscan
 
 Smartscan is a tool that allows autonomous control of nanoARPES experiments.
@@ -17,6 +18,31 @@ the root directory:
 ```bash
 pip install -e .
 ```
+
+Smartscan is built using Python 3.10 and has been tested on Windows only. It should work on other platforms as well, but this has not been tested. The package has the following dependencies:
+
+*GPcam*:
+  - gpcam == 7.4.10
+  - fvgp == 3.3.8
+  - hgdl == 2.0.7
+
+*Other*:
+numpy, scipy, h5py, matplotlib, xarray, tqdm.
+
+*We strongly recommend using a virtual environment to install the package.*
+
+If installing using the command above, no additional dependencies are needed, as they are
+installed automatically. 
+However, if you want to install the dependencies manually, the required packages are listed in the 
+`env.yml` file. A manual installation of the dependencies using `conda` can be done by running the following
+command:
+
+```bash
+conda env create -f env.yml
+```
+
+which will create a new environment called `smartscan` with all the necessary
+dependencies.
 
 ## Usage
 

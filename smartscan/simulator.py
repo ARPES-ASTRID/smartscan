@@ -208,13 +208,13 @@ class VirtualSGM4(TCP.Server):
         else:
             file_stem = Path(file_name).stem
 
-        file_dir = file_dir or settings['simulator']['save_dir']
+        file_dir = file_dir or settings["simulator"]["save_dir"]
         file_dir = Path(file_dir)
         file_dir.mkdir(parents=True, exist_ok=True)
 
-        i=0
+        i = 0
         while True:
-            file_name = file_dir / f'{file_stem}_{i:03.0f}.h5'
+            file_name = file_dir / f"{file_stem}_{i:03.0f}.h5"
             if not file_name.exists():
                 break
             else:
@@ -222,7 +222,9 @@ class VirtualSGM4(TCP.Server):
         self.target_file_name = Path(file_name)
 
         if self.target_file_name.exists():
-            raise FileExistsError(f"File {self.target_file_name.absolute()} already exists.")
+            raise FileExistsError(
+                f"File {self.target_file_name.absolute()} already exists."
+            )
         else:
             self.target_file_name.parent.mkdir(parents=True, exist_ok=True)
 
@@ -443,7 +445,7 @@ class VirtualSGM4(TCP.Server):
 
     def END(self) -> str:
         self.wait_at_queue_empty = False
-        return F"END {self.input_queue.qsize()}"
+        return f"END {self.input_queue.qsize()}"
 
     def ABORT(self) -> str:
         self.status = "ABORTED"
@@ -554,7 +556,7 @@ class SGM4FileManager:
         TODO: add initialization checks
         """
         try:
-            with h5py.File(self.filename, "r", swmr=self.swmr) as f:
+            with h5py.File(self.filename, "r", swmr=self.swmr) as f:  # noqa
                 pass
         except FileNotFoundError:
             return False
@@ -976,8 +978,6 @@ class SGM4FileManager:
 
 
 if __name__ == "__main__":
-
-
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "-c", "--config", default="config.yaml", help="select a configuration file"
@@ -992,41 +992,41 @@ if __name__ == "__main__":
     parser.add_argument(
         "-f", "--file", default=None, help="set the filename to read from"
     )
-    
+
     args = parser.parse_args()
 
-    with open( args.config, 'r') as f:
+    with open(args.config, "r") as f:
         settings = yaml.safe_load(f)
 
-    source_file = args.file or settings['simulator']['source_file']
-    source_file = Path(source_file).with_suffix('.h5')
+    source_file = args.file or settings["simulator"]["source_file"]
+    source_file = Path(source_file).with_suffix(".h5")
     if not source_file.exists():
-        raise FileNotFoundError(f'File {source_file.absolute()} does not exist!')
-    
+        raise FileNotFoundError(f"File {source_file.absolute()} does not exist!")
+
     # init logger
-    logger = logging.getLogger('virtualSGM4')
-    log_level = args.log or settings['logging']['level']
+    logger = logging.getLogger("virtualSGM4")
+    log_level = args.log or settings["logging"]["level"]
     logger.setLevel(log_level.upper())
-    formatter = utils.ColoredFormatter(settings['logging']['formatter'])
+    formatter = utils.ColoredFormatter(settings["logging"]["formatter"])
 
     sh = logging.StreamHandler()
     sh.setLevel(log_level.upper())
     sh.setFormatter(formatter)
     logger.addHandler(sh)
 
-    logger.info(f'Starting simulator based on {source_file.stem}')
-    logger.info(f'Settings file: {args.config}')
+    logger.info(f"Starting simulator based on {source_file.stem}")
+    logger.info(f"Settings file: {args.config}")
 
     # init virtual SGM4
     vm = VirtualSGM4(
-        'localhost', 
-        54333, 
+        "localhost",
+        54333,
         logger=logger,
-        simulate_times=settings['simulator']['simulate_times'],
-        save_to_file=settings['simulator']['save_to_file'],
-        dwell_time=settings['simulator']['dwell_time'],
+        simulate_times=settings["simulator"]["simulate_times"],
+        save_to_file=settings["simulator"]["save_to_file"],
+        dwell_time=settings["simulator"]["dwell_time"],
     )
     vm.init_scan_from_file(filename=source_file)
     vm.create_file()
     vm.run()
-    logger.info('All done. Quitting...')
+    logger.info("All done. Quitting...")

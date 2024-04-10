@@ -151,7 +151,7 @@ class Server:
         writer.close()
 
     @abstractmethod
-    def parse_message(self, message: str):
+    def parse_message(self, message: str) -> str:
         """
         Parse a message received from the client.
 
@@ -165,7 +165,7 @@ class Server:
         self.logger.debug(response, end="")
         return response
 
-    async def tcp_loop(self):
+    async def tcp_loop(self) -> None:
         """
         Start the TCP server.
         """
@@ -178,7 +178,7 @@ class Server:
         async with self.server:
             await self.server.serve_forever()
 
-    async def all_loops(self):
+    async def all_loops(self) -> None:
         """
         Start all the loops.
         """
@@ -187,13 +187,13 @@ class Server:
         ]
         await asyncio.gather(*loop_methods)
 
-    def close(self):
+    def close(self) -> None:
         """
         Close the TCP server.
         """
         self.server.close()
 
-    def run(self):
+    def run(self) -> None:
         """
         Run the TCP server.
         """
@@ -226,7 +226,7 @@ class Client:
         self.buffer_size = buffer_size
         self.end = end
 
-    async def connect(self):
+    async def connect(self) -> None:
         """
         Connect to the TCP server.
         """
@@ -234,7 +234,7 @@ class Client:
             self.host, self.port, limit=self.buffer_size
         )
 
-    async def send_message(self, message: str):
+    async def send_message(self, message: str) -> None:
         """
         Send a message to the TCP server.
 
@@ -272,16 +272,16 @@ class Client:
             message = data.decode("utf-8")
         return message
 
-    def close(self):
+    def close(self) -> None:
         """
         Close the connection to the TCP server.
         """
         self.writer.close()
 
-    def __del__(self):
+    def __del__(self) -> None:
         try:
             self.close()
-        except:
+        except Exception:
             pass
 
 

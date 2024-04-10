@@ -148,12 +148,12 @@ def curvature(
     roi: Sequence[Sequence[int]] = None,
     reduction: Callable = np.mean,
 ) -> float:
-    """ Calculates the curvature of an array using a 2D gaussian kernel
+    """Calculates the curvature of an array using a 2D gaussian kernel
 
     Calculates the curvature of an array using a Box 2D Kernel
     defined in:
-    P. Zhang, P. Richard, T. Qian, Y.-M. Xu, X. Dai, H. Ding; A precise method for visualizing 
-    dispersive features in image plots. Rev. Sci. Instrum. 1 April 2011; 82 (4): 043712. 
+    P. Zhang, P. Richard, T. Qian, Y.-M. Xu, X. Dai, H. Ding; A precise method for visualizing
+    dispersive features in image plots. Rev. Sci. Instrum. 1 April 2011; 82 (4): 043712.
     https://doi.org/10.1063/1.3585113
 
     For the convolution function and kernel see:
@@ -173,7 +173,6 @@ def curvature(
         cv2d(np.array): absolute value of the curvature reduced by reduction function (default: mean)
             if reduction is None, returns the curvature array (2D)
     """
-
 
     if roi is not None:
         roi = np.array(roi)

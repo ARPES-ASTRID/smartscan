@@ -262,7 +262,7 @@ def voronoi_polygon_plot(
     ax: plt.Axes | None = None,
     border: float | None = 0.02,
 ) -> plt.Axes:
-    """ Plot the Voronoi diagram of a set of points.
+    """Plot the Voronoi diagram of a set of points.
 
     Args:
         points (np.ndarray): The points to plot.
@@ -277,7 +277,7 @@ def voronoi_polygon_plot(
         alpha (float): The transparency of the polygons.
         ax (plt.Axes | None): The axes to plot on.
         border (float | None): The border to add to the plot.
-        
+
     Returns:
         The axes of the plot.
     """

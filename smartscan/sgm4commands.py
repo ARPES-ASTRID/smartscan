@@ -232,7 +232,9 @@ class SGM4Commands:
         print(response)
         split = response.split(" ")
         assert split[0] == "LIMITS", f"Expected LIMITS, got {split[0]}"
-        limits = [tuple([float(lim) for lim in limit.split(",")]) for limit in split[1:]]
+        limits = [
+            tuple([float(lim) for lim in limit.split(",")]) for limit in split[1:]
+        ]
         assert (
             len(limits) == self.ndim
         ), f"Expected {self._ndim} limits, got {len(limits)}"

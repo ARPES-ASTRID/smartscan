@@ -1,5 +1,6 @@
-from typing import Any, Sequence, Tuple
 import logging
+from typing import Any, Sequence, Tuple
+
 import numpy as np
 
 

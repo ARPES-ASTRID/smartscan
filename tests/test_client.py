@@ -1,13 +1,15 @@
-from typing import Tuple
 import asyncio
-import pytest
-from unittest import mock
-from smartscan.TCP import Client
 from asyncio.streams import StreamReader, StreamWriter
+from typing import Generator, Tuple
+from unittest import mock
+
+import pytest
+
+from smartscan.TCP import Client
 
 
 @pytest.fixture
-def event_loop() -> asyncio.AbstractEventLoop:
+def event_loop() -> Generator[asyncio.AbstractEventLoop]:
     """
     Fixture to provide the asyncio event loop for the tests.
     """
@@ -17,7 +19,7 @@ def event_loop() -> asyncio.AbstractEventLoop:
 
 
 @pytest.fixture
-def mock_server_connection(event_loop) -> Tuple[StreamReader, StreamWriter]:
+def mock_server_connection(event_loop) -> Generator[Tuple[StreamReader, StreamWriter]]:
     """
     Fixture to mock the server connection for testing the TCPClient.
     """
@@ -28,9 +30,9 @@ def mock_server_connection(event_loop) -> Tuple[StreamReader, StreamWriter]:
         await asyncio.sleep(0.1)
         return reader, writer
 
-    client = Client('localhost', 1234)
+    client = Client("localhost", 1234)
 
-    with mock.patch.object(asyncio, 'open_connection', side_effect=mock_connect):
+    with mock.patch.object(asyncio, "open_connection", side_effect=mock_connect):
         event_loop.run_until_complete(client.connect())
 
     yield reader, writer
@@ -46,15 +48,15 @@ async def test_send_message(mock_server_connection) -> None:
     reader, writer = mock_server_connection
 
     # Send a message
-    message = 'Hello, server!'
+    message = "Hello, server!"
     writer.drain.return_value = asyncio.Future()
     writer.drain.return_value.set_result(None)
-    reader.read.return_value = (f'Received message "{message}"\n').encode('utf-8')
+    reader.read.return_value = (f'Received message "{message}"\n').encode("utf-8")
 
-    client = Client('localhost', 1234)
+    client = Client("localhost", 1234)
     await client.send_message(message)
 
-    writer.write.assert_called_once_with(message.encode('utf-8'))
+    writer.write.assert_called_once_with(message.encode("utf-8"))
     writer.drain.assert_called_once()
 
 
@@ -66,10 +68,10 @@ async def test_receive_message(mock_server_connection) -> None:
     reader, writer = mock_server_connection
 
     # Receive a message
-    message = 'Hello, client!'
-    reader.read.return_value = (f'{message}\n').encode('utf-8')
+    message = "Hello, client!"
+    reader.read.return_value = (f"{message}\n").encode("utf-8")
 
-    client = Client('localhost', 1234)
+    client = Client("localhost", 1234)
     received_message = await client.receive_message()
 
     reader.read.assert_called_once_with(1024)
@@ -83,16 +85,16 @@ async def test_connect_and_close(mock_server_connection) -> None:
     """
     reader, writer = mock_server_connection
 
-    client = Client('localhost', 1234)
+    client = Client("localhost", 1234)
     await client.connect()
 
     asyncio.sleep.assert_called_once_with(0.1)
-    asyncio.open_connection.assert_called_once_with('localhost', 1234)
+    asyncio.open_connection.assert_called_once_with("localhost", 1234)
 
     client.close()
 
     writer.close.assert_called_once()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     pytest.main()

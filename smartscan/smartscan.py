@@ -6,6 +6,7 @@ import time
 import traceback
 from functools import partial
 from pathlib import Path
+from typing import Callable
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -1094,7 +1095,7 @@ class SmartScan:
             )
 
 
-def main(run_func: callable | None = None) -> None:
+def main(run_func: Callable | None = None) -> None:
     """ Main function to run the smart scan.
     
     Args:

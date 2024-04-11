@@ -1,5 +1,4 @@
 from pathlib import Path
-from typing import tuple
 
 import dask.array
 import h5py
@@ -10,10 +9,19 @@ from tqdm.auto import tqdm
 
 from . import tasks
 
+ALIAS = {
+    'FSamX': 'x',
+    'FSamY': 'y',
+    'FSamZ': 'z',
+    'SALX': "theta",
+    "Kinetic Energy": "energy",
+    "OrdinateRange": "phi",
+}
 
 def load_smartscan(
-    filename: str,
-    folder: str | Path = None,
+    file_path: str,
+    merge_unique: bool = True,
+    # folder: str | Path = None,
 ) -> dict["str", np.ndarray | xr.DataArray]:
     """Load data acquired with the GP driven smart scan on SGM4
 
@@ -23,16 +31,23 @@ def load_smartscan(
 
     Args:
         filename (str): file name
-        folder (str|Path, optional): folder path. Defaults to None.
+        # folder (str|Path, optional): folder path. Defaults to None.
 
     Returns:
         tuple[np.ndarray, np.ndarray]: positions, data
     """
-    h5_file_name = Path(filename).with_suffix(".h5")
-    if not h5_file_name.exists():
-        h5_file_name = Path(folder) / h5_file_name
+    file_path = Path(file_path)
+    h5_file_name = file_path.with_suffix(".h5")
     if not h5_file_name.exists():
         raise FileNotFoundError(f"{h5_file_name} does not exist")
+    settings_file = file_path.with_suffix(".yaml")
+    if not settings_file.exists():
+        settings_file = file_path.parent / (file_path.stem + "_settings.yaml")
+    if not settings_file.exists():
+        Warning(
+            f"Could not find settings file {file_path.stem + '.yaml'} nor "
+            f"{file_path.stem + '_settings.yaml'} in {file_path.parent}"
+        )
 
     with h5py.File(h5_file_name, "r", swmr=True) as file:
         positions = file["Entry/Data/ScanDetails/TruePositions"][()]
@@ -41,7 +56,9 @@ def load_smartscan(
         fa_start = file["Entry/Data/ScanDetails/FastAxis_start"][()]
         fa_step = file["Entry/Data/ScanDetails/FastAxis_step"][()]
         fa_name = file["Entry/Data/ScanDetails/FastAxis_names"][()].astype(str)
+        fa_name = [ALIAS.get(d, d) for d in fa_name]
         sa_name = file["Entry/Data/ScanDetails/SlowAxis_names"][()].astype(str)
+        sa_name = [ALIAS.get(d, d) for d in sa_name]
         coords = {}
         dims = list(sa_name) + list(fa_name)
         for i, name in enumerate(fa_name):
@@ -50,24 +67,25 @@ def load_smartscan(
             coords[name] = np.linspace(start, stop, fa_len[i])
         for i, name in enumerate(sa_name):
             coords[name] = None
-    print(f"loaded {filename}: data shape: {spectra.shape}")
+    print(f"loaded {h5_file_name}: data shape: {spectra.shape}")
 
     # add settings
-    settings_file = Path(filename + "_settings.yaml")
-    if not settings_file.exists():
-        settings_file = Path(folder) / (filename + ".yaml")
-    if not settings_file.exists():
-        settings_file = Path(folder) / (filename + "_settings.yaml")
-    if not settings_file.exists():
-        print(f"WARNING: settings file {settings_file} does not exist")
-        settings = {}
-    else:
+
+    if settings_file.exists():
         with open(settings_file) as file:
             settings: dict = get_scan_params(yaml.unsafe_load(file))
-    print(f"loaded {settings_file}")
+            print(f"loaded scan settings from {settings_file}")
+    else:
+        settings = {}
 
+    coords["idx"] = np.arange(len(positions))
     out = {
-        "all_positions": positions,
+        "all_positions": xr.DataArray(
+            data=positions,
+            dims=["idx", "position"],
+            coords={"idx": coords["idx"], "position": list(sa_name)},
+            name="all_positions",
+        ),
         "all_spectra": [],
         "dims": sa_name,
         "coords": coords,
@@ -75,7 +93,7 @@ def load_smartscan(
     }
     if len(settings) > 0:
         roi = out["attrs"]["settings/roi"]
-        out["roi_dict"] = {k: slice(*v) for k, v in zip(fa_name, roi)}
+        out["attrs"]["roi_dict"] = {k: slice(*v) for k, v in zip(fa_name, roi)}
 
     scan_attrs = get_h5_attrs(h5_file_name)
     out["attrs"].update(scan_attrs)
@@ -91,19 +109,28 @@ def load_smartscan(
             xr.DataArray(
                 data=sp.reshape(shape),
                 dims=dims,
-                coords=coords,
+                coords={k:v for k,v in coords.items() if k in dims},
                 attrs=out["attrs"],
             ).squeeze()
         )
-    out["all_spectra"] = xr.concat(out["all_spectra"], dim="idx")
-    out["all_spectra"] = out["all_spectra"].assign_coords(
-        idx=np.arange(len(out["all_spectra"].idx)),
+    out["all_spectra"] = xr.concat(out["all_spectra"], dim="idx").assign_coords(
+        idx=coords["idx"]
     )
-
+    out["all_spectra"].name = "all_spectra"
     merged = {}
     counts = {}
+
+    if not merge_unique:
+        darrays = []
+        for _,v in out.items():
+            if isinstance(v, xr.DataArray):
+                darrays.append(v)
+        combined = xr.merge(darrays, compat="override")
+        combined.attrs = out["attrs"]
+        return combined
+    
     # combine data with the same position
-    for pos, sp in zip(out["all_positions"], out["all_spectra"]):
+    for pos, sp in zip(out["all_positions"].values, out["all_spectra"]):
         pos = tuple(pos)
         if pos in merged:
             merged[pos] += sp
@@ -113,12 +140,28 @@ def load_smartscan(
             counts[pos] = 1
     # get the mean of data with the same position
     merged = {k: v / counts[k] for k, v in merged.items()}
-    out["unique_positions"] = np.array(tuple(merged.keys()))
-    out["unique_counts"] = np.array(tuple(counts.values()))
-    out["unique_spectra"] = xr.concat(merged.values(), dim="uidx")
-    out["unique_spectra"] = out["unique_spectra"].assign_coords(
-        uidx=np.arange(len(out["unique_spectra"].uidx))
+    coords["uidx"] = np.arange(len(merged))
+    out["unique_positions"] = xr.DataArray(
+        data=list(merged.keys()),
+        dims=["uidx", "position"],
+        coords={
+            "uidx": np.arange(len(merged)),
+            "position": list(sa_name),
+            },
+        name="unique_positions",
     )
+    out["unique_counts"] = xr.DataArray(
+        data=list(counts.values()),
+        dims="uidx",
+        coords={"uidx": np.arange(len(merged))},
+        name="unique_counts",
+    )
+    out["unique_error"] = 0.01/np.sqrt(out["unique_counts"])
+    out["unique_spectra"] = xr.concat(merged.values(), dim="uidx").assign_coords(
+        uidx=np.arange(len(merged))
+    )
+    out["unique_spectra"].name = "unique_spectra"
+
 
     # tasks
     if settings_file.exists():
@@ -129,7 +172,7 @@ def load_smartscan(
                 "callable": getattr(tasks, td["function"]),
                 "pars": td["params"],
             }
-        out["task_values"] = []
+        task_values = []
     for i in tqdm(range(len(out["unique_spectra"]))):
         tvals = []
         sp = out["unique_spectra"].isel(
@@ -137,12 +180,93 @@ def load_smartscan(
         )  # .isel(out['roi_dict']).squeeze().values,
         for task, td in out["tasks"].items():
             tvals.append(td["callable"](sp, **td["pars"]))
-        out["task_values"].append(tvals)
-    out["task_values"] = np.array(out["task_values"])
-    out["task_values_norm"] = out["task_values"] / out["task_values"].max(axis=0)
-    out["task_values_norm"] = out["task_values"] / out["task_values"].max(axis=0)
+        task_values.append(tvals)
+    out["combined_tasks"] = xr.DataArray(
+        data=np.array(task_values),
+        dims=["uidx", "task"],
+        coords={"uidx": np.arange(len(merged)), "task": list(out["tasks"].keys())},
+        name="combined_tasks",
+    )
+    out["combined_tasks_norm"] = out["combined_tasks"] / out["combined_tasks"].max(
+        axis=0
+    )
+    out["combined_tasks_norm"] = out["combined_tasks"] / out["combined_tasks"].max(
+        axis=0
+    )
+    for i, task in enumerate(out["tasks"].keys()):
+        out[task] = out["combined_tasks"].isel(task=i)
+    darrays = []
+    for k,v in out.items():
+        if isinstance(v, xr.DataArray) and not k.startswith("all") and not k.startswith("combined"):
+            v.name = k.split("_")[-1]
+            darrays.append(v)
+    combined = xr.merge(darrays, compat="override").drop_vars(
+        [*list(sa_name), "idx", "task", "positions", "position"])
+    combined.attrs = out["attrs"]
+    for i,d in enumerate(sa_name):
+        combined = combined.assign_coords({d:out['unique_positions'][:,i].drop_vars('position')})
+    return combined
 
-    return out
+    # return out
+
+
+def load_raster_scan(
+    file_path: str,
+    snake_scan: bool = False,
+    sort: bool = True,
+) -> xr.DataArray:
+    """ Load data acquired with a raster scan on SGM4
+    
+    Args:
+        file_path (str): file path
+        
+    Returns:
+        xr.DataArray: data
+    """
+    file_path = Path(file_path)
+    with h5py.File(file_path, "r", swmr=True) as file:
+        # positions = file["Entry/Data/ScanDetails/TruePositions"][()]
+        spectra = file["Entry/Data/TransformedData"][()]
+        fa_len = file["Entry/Data/ScanDetails/FastAxis_length"][()]
+        fa_start = file["Entry/Data/ScanDetails/FastAxis_start"][()]
+        fa_step = file["Entry/Data/ScanDetails/FastAxis_step"][()]
+        fa_name = file["Entry/Data/ScanDetails/FastAxis_names"][()].astype(str)
+        fa_name = [ALIAS.get(d, d) for d in fa_name]
+        sa_len = file["Entry/Data/ScanDetails/SlowAxis_length"][()]
+        sa_start = file["Entry/Data/ScanDetails/SlowAxis_start"][()]
+        sa_step = file["Entry/Data/ScanDetails/SlowAxis_step"][()]
+        sa_name = file["Entry/Data/ScanDetails/SlowAxis_names"][()].astype(str)
+        sa_name = [ALIAS.get(d, d) for d in sa_name]
+        coords = {}
+
+        dims = list(sa_name)[::-1] + list(fa_name)
+        for i, name in enumerate(fa_name):
+            start = fa_start[i]
+            stop = fa_start[i] + fa_len[i] * fa_step[i]
+            coords[name] = np.linspace(start, stop, fa_len[i])
+        for i, name in enumerate(sa_name):
+            start = sa_start[i]
+            stop = sa_start[i] + sa_len[i] * sa_step[i]
+            coords[name] = np.linspace(start, stop, sa_len[i])
+
+        if spectra.size != np.prod(sa_len) * np.prod(fa_len):
+            sp = np.nan * np.ones([np.prod(sa_len), *fa_len])
+            sp[:spectra.shape[0],...] = spectra
+            spectra = sp 
+        out =  xr.DataArray(
+            data = spectra.reshape([*sa_len[::-1], *fa_len]),
+            dims = dims,
+            coords = coords,
+            name = file_path.stem,
+        )
+        if snake_scan:
+            for i in range(1, len(sa_name), 2):
+                out[sa_name[i]] = out[sa_name[i]][::-1]
+        if sort:
+            for dim in sa_name:
+                out = out.sortby(dim)
+        return out
+
 
 
 def save_h5(

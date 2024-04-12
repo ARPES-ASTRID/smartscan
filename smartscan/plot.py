@@ -248,7 +248,7 @@ def interpolate_points_to_array(
     return xarr
 
 
-def vornoi_plot(
+def voronoi_plot(
     points: np.ndarray,
     values: np.ndarray,
     cmap: Callable | str = "viridis",

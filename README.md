@@ -101,12 +101,25 @@ The following settings are available: -->
 
 If you use this tool in your research, please cite the following paper:
 
+S.Y. Ágústsson, A. J. H. Jones, D. Curcio, S. Ulstrup, J. Miwa, D. Mottin, P. Karras, P. Hofmann, Autonomous micro-focus angle-resolved photoemission spectroscopy. _Rev. Sci. Instrum._ **95** 055106 (2024) 
+
+DOI: [https://doi.org/10.1063/5.0204663](https://doi.org/10.1063/5.0204663)
+
+Bibtex:
 ```bibtex
-@article{smartscan,
-  title={Autonomous Micro-Focus Angle-Resolved Photoemission Spectroscopy},
-  author={Steinn Ymir Agustsson, Alfred J.H.Jones, Davide Curcio, Søren Ulstrup, Jill Miwa, Davide Mottin, Panagiotis Karras and Philip Hofmann},
-  journal={Review of Scientific Instruments},
-  year={2024}
-  status={In Review}
+@article{10.1063/5.0204663,
+    author = {Ágústsson, Steinn Ýmir and Jones, Alfred J. H. and Curcio, Davide and Ulstrup, Søren and Miwa, Jill and Mottin, Davide and Karras, Panagiotis and Hofmann, Philip},
+    title = "{Autonomous micro-focus angle-resolved photoemission spectroscopy}",
+    journal = {Review of Scientific Instruments},
+    volume = {95},
+    number = {5},
+    pages = {055106},
+    year = {2024},
+    month = {05},
+    abstract = "{Angle-resolved photoemission spectroscopy (ARPES) is a technique used to map the occupied electronic structure of solids. Recent progress in x-ray focusing optics has led to the development of ARPES into a microscopic tool, permitting the electronic structure to be spatially mapped across the surface of a sample. This comes at the expense of a time-consuming scanning process to cover not only a three-dimensional energy-momentum (E, kx, ky) space but also the two-dimensional surface area. Here, we implement a protocol to autonomously search both k- and real-space in order to find positions of particular interest, either because of their high photoemission intensity or because of sharp spectral features. The search is based on the use of Gaussian process regression and can easily be expanded to include additional parameters or optimization criteria. This autonomous experimental control is implemented on the SGM4 micro-focus beamline of the synchrotron radiation source ASTRID2.}",
+    issn = {0034-6748},
+    doi = {10.1063/5.0204663},
+    url = {https://doi.org/10.1063/5.0204663},
+    eprint = {https://pubs.aip.org/aip/rsi/article-pdf/doi/10.1063/5.0204663/19921467/055106\_1\_5.0204663.pdf},
 }
 ```
